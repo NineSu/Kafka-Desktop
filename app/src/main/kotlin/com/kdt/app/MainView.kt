@@ -8,6 +8,7 @@ import com.kdt.storage.MessageRepository
 import com.kdt.storage.MessageRow
 import com.kdt.ui.common.ConnectionForm
 import com.kdt.ui.common.FilterBuilder
+import com.kdt.ui.common.MessageDetailPane
 import javafx.animation.AnimationTimer
 import javafx.application.Platform
 import javafx.beans.property.SimpleStringProperty
@@ -47,6 +48,7 @@ class MainView {
     private val topicList = ListView<String>()
     private val messageTable = TableView<MessageRowFx>()
     private val tableRows = FXCollections.observableArrayList<MessageRowFx>()
+    private val detailPane = MessageDetailPane()
     private val topicHeader = Label("(no topic)").apply { style = "-fx-padding: 6 12 6 12; -fx-font-weight: bold;" }
     private val statsLabel = Label("").apply { style = "-fx-padding: 6 12 6 12;" }
 
@@ -77,15 +79,23 @@ class MainView {
         buildMessageTable()
         wireConnectionForm()
         wireTopicSelection()
+        wireRowSelection()
 
         val left = VBox(topicList).apply { VBox.setVgrow(topicList, Priority.ALWAYS) }
         val headerRow = HBox(8.0, topicHeader, statsLabel)
-        val right = BorderPane().apply {
+        val tableArea = BorderPane().apply {
             top = headerRow
             center = messageTable
+        }
+        val rightSplit = SplitPane(tableArea, detailPane).apply {
+            orientation = javafx.geometry.Orientation.VERTICAL
+            setDividerPositions(0.55)
+        }
+        val right = BorderPane().apply {
+            center = rightSplit
             bottom = filterBuilder
         }
-        val split = SplitPane(left, right).apply { setDividerPositions(0.25) }
+        val split = SplitPane(left, right).apply { setDividerPositions(0.20) }
 
         val root = BorderPane().apply {
             top = connectionForm
@@ -93,11 +103,41 @@ class MainView {
         }
 
         stage.title = "Kafka Desktop"
-        stage.scene = Scene(root, 1200.0, 750.0)
+        stage.scene = Scene(root, 1300.0, 850.0)
         stage.setOnCloseRequest { tearDown() }
         stage.show()
 
         refreshTimer.start()
+    }
+
+    private fun wireRowSelection() {
+        messageTable.selectionModel.selectedItemProperty().addListener { _, _, row ->
+            val topic = currentTopic
+            if (row == null || topic == null) {
+                detailPane.bind(null); return@addListener
+            }
+            val task = object : Task<MessageRow?>() {
+                override fun call(): MessageRow? =
+                    repo.findOne(clusterId, topic, row.getPartition(), row.getOffset())
+            }
+            task.setOnSucceeded {
+                val m = task.value ?: return@setOnSucceeded detailPane.bind(null)
+                detailPane.bind(
+                    MessageDetailPane.MessageDetail(
+                        partition = m.partition,
+                        offset = m.offset,
+                        timestampMs = m.timestampMs,
+                        keyText = m.key,
+                        keyBytes = m.keyBytes,
+                        valueText = m.valueStr,
+                        valueBytes = m.valueBytes,
+                        valueJson = m.valueJson,
+                        headersJson = m.headersJson,
+                    )
+                )
+            }
+            Thread(task, "detail-fetch").apply { isDaemon = true }.start()
+        }
     }
 
     private fun buildMessageTable() {

@@ -5,6 +5,7 @@ plugins {
 dependencies {
     implementation(project(":core-filter"))
     implementation(project(":core-auth"))
+    implementation(libs.jackson.module.kotlin)
     testImplementation(libs.junit.jupiter)
 }
 

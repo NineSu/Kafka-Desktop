@@ -18,6 +18,8 @@ data class MessageRow(
     val valueStr: String?,
     val valueJson: String?,
     val headersJson: String?,
+    val keyBytes: ByteArray? = null,
+    val valueBytes: ByteArray? = null,
 )
 
 /**
@@ -196,6 +198,35 @@ class MessageRepository(
             ps.setString(1, clusterId)
             ps.setString(2, topic)
             ps.executeUpdate()
+        }
+    }
+
+    @Synchronized
+    fun findOne(clusterId: String, topic: String, partition: Int, offset: Long): MessageRow? {
+        val sql = """
+            SELECT partition, "offset", ts, key_str, value_str, value_json, headers, key_bytes, value_bytes
+            FROM messages
+            WHERE cluster_id = ? AND topic = ? AND partition = ? AND "offset" = ?
+            LIMIT 1
+        """.trimIndent()
+        return connection.prepareStatement(sql).use { ps ->
+            ps.setString(1, clusterId)
+            ps.setString(2, topic)
+            ps.setInt(3, partition)
+            ps.setLong(4, offset)
+            val rs = ps.executeQuery()
+            if (!rs.next()) null
+            else MessageRow(
+                partition = rs.getInt(1),
+                offset = rs.getLong(2),
+                timestampMs = rs.getTimestamp(3).time,
+                key = rs.getString(4),
+                valueStr = rs.getString(5),
+                valueJson = rs.getString(6),
+                headersJson = rs.getString(7),
+                keyBytes = rs.getBytes(8),
+                valueBytes = rs.getBytes(9),
+            )
         }
     }
 
