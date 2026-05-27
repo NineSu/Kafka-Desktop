@@ -136,13 +136,14 @@ class MainView {
         if (bootstrap.isEmpty()) {
             connectionForm.setStatus("Enter bootstrap.servers first.", error = true); return
         }
+        val auth = connectionForm.authStrategy.value
         connectionForm.setBusy(true)
         connectionForm.setStatus("Connecting to $bootstrap …")
 
         val task = object : Task<Set<String>>() {
             override fun call(): Set<String> {
                 connection?.close()
-                val conn = KafkaConnection(bootstrap)
+                val conn = KafkaConnection(bootstrap, auth)
                 connection = conn
                 return conn.listTopics()
             }
@@ -185,6 +186,7 @@ class MainView {
                     topicHeader.text = "Topic: $topic — ERROR: ${t.message ?: t.javaClass.simpleName}"
                 }
             },
+            auth = connectionForm.authStrategy.value,
         )
         currentConsumer = consumer
         consumer.start()
