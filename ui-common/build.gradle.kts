@@ -3,6 +3,7 @@ plugins {
 }
 
 dependencies {
+    implementation(project(":core-filter"))
     testImplementation(libs.junit.jupiter)
 }
 

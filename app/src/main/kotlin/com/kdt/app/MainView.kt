@@ -7,6 +7,7 @@ import com.kdt.kafka.KafkaMessageConsumer
 import com.kdt.storage.MessageRepository
 import com.kdt.storage.MessageRow
 import com.kdt.ui.common.ConnectionForm
+import com.kdt.ui.common.FilterBuilder
 import javafx.animation.AnimationTimer
 import javafx.application.Platform
 import javafx.beans.property.SimpleStringProperty
@@ -38,6 +39,11 @@ class MainView {
 
     private val repo = MessageRepository()
     private val connectionForm = ConnectionForm()
+    private val filterBuilder = FilterBuilder().apply {
+        onApply = { node ->
+            applyFilter(node)
+        }
+    }
     private val topicList = ListView<String>()
     private val messageTable = TableView<MessageRowFx>()
     private val tableRows = FXCollections.observableArrayList<MessageRowFx>()
@@ -77,6 +83,7 @@ class MainView {
         val right = BorderPane().apply {
             top = headerRow
             center = messageTable
+            bottom = filterBuilder
         }
         val split = SplitPane(left, right).apply { setDividerPositions(0.25) }
 
@@ -259,8 +266,9 @@ class MainView {
         fun getValuePreview(): String = valuePreviewProperty.get()
     }
 
-    /** Hook for T5 to plug in the visual filter builder. */
+    /** Hook for the visual filter builder. Re-queries the active page immediately. */
     fun applyFilter(filter: FilterNode?) {
         currentFilter = filter
+        refreshTable()
     }
 }
