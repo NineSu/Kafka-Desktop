@@ -125,7 +125,9 @@ class MainView {
                     repo.findOne(clusterId, topic, row.getPartition(), row.getOffset())
             }
             task.setOnSucceeded {
-                val m = task.value ?: return@setOnSucceeded detailPane.bind(null)
+                val m = task.value
+                log.info("detail-fetch p={} o={} -> found={}", row.getPartition(), row.getOffset(), m != null)
+                if (m == null) return@setOnSucceeded detailPane.bind(null)
                 detailPane.bind(
                     MessageDetailPane.MessageDetail(
                         partition = m.partition,
@@ -139,6 +141,9 @@ class MainView {
                         headersJson = m.headersJson,
                     )
                 )
+            }
+            task.setOnFailed {
+                log.error("detail-fetch failed", task.exception)
             }
             Thread(task, "detail-fetch").apply { isDaemon = true }.start()
         }

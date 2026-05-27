@@ -224,9 +224,26 @@ class MessageRepository(
                 valueStr = rs.getString(5),
                 valueJson = rs.getString(6),
                 headersJson = rs.getString(7),
-                keyBytes = rs.getBytes(8),
-                valueBytes = rs.getBytes(9),
+                keyBytes = blobToBytes(rs.getObject(8)),
+                valueBytes = blobToBytes(rs.getObject(9)),
             )
+        }
+    }
+
+    /** DuckDB's JDBC driver returns BLOB as ByteBuffer (or similar) — handle several possible shapes. */
+    private fun blobToBytes(any: Any?): ByteArray? = when (any) {
+        null -> null
+        is ByteArray -> any
+        is java.nio.ByteBuffer -> ByteArray(any.remaining()).also { any.get(it) }
+        is java.sql.Blob -> any.getBytes(1, any.length().toInt())
+        is org.duckdb.DuckDBResultSet.DuckDBBlobResult -> {
+            val stream = any.binaryStream
+            stream.use { it.readAllBytes() }
+        }
+        else -> {
+            // Fallback: stringify (loses fidelity but avoids crash)
+            log.warn("Unknown BLOB return type: {}", any.javaClass.name)
+            null
         }
     }
 
