@@ -4,11 +4,15 @@ import com.kdt.filter.FilterNode
 import com.kdt.kafka.ConsumedMessage
 import com.kdt.kafka.KafkaConnection
 import com.kdt.kafka.KafkaMessageConsumer
+import com.kdt.kafka.KafkaMessageProducer
+import com.kdt.kafka.SendResult
 import com.kdt.storage.MessageRepository
 import com.kdt.storage.MessageRow
 import com.kdt.ui.common.ConnectionForm
 import com.kdt.ui.common.FilterBuilder
 import com.kdt.ui.common.MessageDetailPane
+import com.kdt.ui.common.ProducerDialog
+import com.kdt.ui.common.ProducerRequest
 import javafx.animation.AnimationTimer
 import javafx.application.Platform
 import javafx.beans.property.SimpleStringProperty
@@ -18,7 +22,10 @@ import javafx.scene.Scene
 import javafx.scene.control.Label
 import javafx.scene.control.ListView
 import javafx.scene.control.SplitPane
+import javafx.scene.control.ContextMenu
+import javafx.scene.control.MenuItem
 import javafx.scene.control.TableColumn
+import javafx.scene.control.TableRow
 import javafx.scene.control.TableView
 import javafx.scene.control.cell.PropertyValueFactory
 import javafx.scene.layout.BorderPane
@@ -51,12 +58,15 @@ class MainView {
     private val detailPane = MessageDetailPane()
     private val topicHeader = Label("(no topic)").apply { style = "-fx-padding: 6 12 6 12; -fx-font-weight: bold;" }
     private val statsLabel = Label("").apply { style = "-fx-padding: 6 12 6 12;" }
+    private val sendButton = javafx.scene.control.Button("Send message…").apply { isDisable = true }
 
     private var connection: KafkaConnection? = null
     private var currentConsumer: KafkaMessageConsumer? = null
+    private var currentProducer: KafkaMessageProducer? = null
     private var currentTopic: String? = null
     private var currentFilter: FilterNode? = null
     @Volatile private var refreshing: Boolean = false
+    private var allTopics: List<String> = emptyList()
 
     // Producer thread fills this queue; UI-side timer batches it into DuckDB.
     private val inboxQueue = ConcurrentLinkedQueue<ConsumedMessage>()
@@ -81,9 +91,10 @@ class MainView {
         wireConnectionForm()
         wireTopicSelection()
         wireRowSelection()
+        wireSendButton()
 
         val left = VBox(topicList).apply { VBox.setVgrow(topicList, Priority.ALWAYS) }
-        val headerRow = HBox(8.0, topicHeader, statsLabel)
+        val headerRow = HBox(8.0, topicHeader, statsLabel, sendButton)
         val tableArea = BorderPane().apply {
             top = headerRow
             center = messageTable
@@ -168,6 +179,65 @@ class MainView {
         messageTable.columns.setAll(partitionCol, offsetCol, tsCol, keyCol, valueCol)
         messageTable.items = tableRows
         messageTable.placeholder = Label("Select a topic to start consuming.")
+
+        // Right-click "Replay this message"
+        messageTable.setRowFactory { _ ->
+            val row = TableRow<MessageRowFx>()
+            val menu = ContextMenu()
+            val replayItem = MenuItem("Replay this message…").apply {
+                setOnAction { row.item?.let { openProducerDialog(it) } }
+            }
+            menu.items.add(replayItem)
+            row.contextMenuProperty().bind(
+                javafx.beans.binding.Bindings.`when`(row.emptyProperty()).then(null as ContextMenu?).otherwise(menu)
+            )
+            row
+        }
+    }
+
+    private fun wireSendButton() {
+        sendButton.setOnAction { openProducerDialog(null) }
+    }
+
+    private fun openProducerDialog(replayRow: MessageRowFx?) {
+        val topic = currentTopic ?: allTopics.firstOrNull()
+        // For replay, fetch the full message to get its bytes; otherwise blank
+        val dialog = if (replayRow != null && topic != null) {
+            val m = repo.findOne(clusterId, topic, replayRow.getPartition(), replayRow.getOffset())
+            val headers = m?.headersJson?.let { parseHeadersJson(it) } ?: emptyMap()
+            ProducerDialog(allTopics, topic, m?.key, m?.valueStr, headers)
+        } else {
+            ProducerDialog(allTopics, topic)
+        }
+        val result = dialog.showAndWait()
+        if (!result.isPresent) return
+        val req = result.get()
+        sendOne(req)
+    }
+
+    private fun parseHeadersJson(json: String): Map<String, String?> = try {
+        val mapper = com.fasterxml.jackson.databind.ObjectMapper()
+        val node = mapper.readTree(json)
+        node.fields().asSequence().associate { (k, v) -> k to if (v.isNull) null else v.asText() }
+    } catch (_: Exception) { emptyMap() }
+
+    private fun sendOne(req: ProducerRequest) {
+        val bootstrap = connectionForm.bootstrapServers.value.orEmpty().trim()
+        if (bootstrap.isEmpty()) return
+        val producer = currentProducer ?: KafkaMessageProducer(bootstrap, connectionForm.authStrategy.value).also { currentProducer = it }
+        val task = object : Task<SendResult>() {
+            override fun call(): SendResult =
+                producer.send(req.topic, req.key, req.value, req.headers, req.partition).get()
+        }
+        task.setOnSucceeded {
+            val rm = task.value
+            statsLabel.text = "sent → ${rm.topic}:${rm.partition}@${rm.offset}"
+        }
+        task.setOnFailed {
+            statsLabel.text = "send failed: ${task.exception.message ?: task.exception.javaClass.simpleName}"
+            log.error("send failed", task.exception)
+        }
+        Thread(task, "producer-send").apply { isDaemon = true }.start()
     }
 
     private fun wireConnectionForm() {
@@ -199,9 +269,11 @@ class MainView {
         }
         task.setOnSucceeded {
             val topics = task.value.sorted()
+            allTopics = topics
             topicList.items = FXCollections.observableArrayList(topics)
             connectionForm.setBusy(false)
             connectionForm.setStatus("Connected — ${topics.size} topic(s)")
+            sendButton.isDisable = false
         }
         task.setOnFailed {
             val t = task.exception
@@ -305,6 +377,7 @@ class MainView {
     private fun tearDown() {
         refreshTimer.stop()
         try { currentConsumer?.close() } catch (_: Exception) {}
+        try { currentProducer?.close() } catch (_: Exception) {}
         try { connection?.close() } catch (_: Exception) {}
         try { repo.close() } catch (_: Exception) {}
     }
