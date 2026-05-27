@@ -3,19 +3,19 @@ package com.kdt.ui.common
 import javafx.beans.property.SimpleStringProperty
 import javafx.collections.FXCollections
 import javafx.geometry.Insets
+import javafx.geometry.Pos
 import javafx.scene.control.Button
 import javafx.scene.control.ButtonType
 import javafx.scene.control.ComboBox
 import javafx.scene.control.Dialog
 import javafx.scene.control.Label
-import javafx.scene.control.TableColumn
-import javafx.scene.control.TableView
+import javafx.scene.control.ScrollPane
 import javafx.scene.control.TextArea
 import javafx.scene.control.TextField
-import javafx.scene.control.cell.PropertyValueFactory
-import javafx.scene.control.cell.TextFieldTableCell
 import javafx.scene.layout.GridPane
 import javafx.scene.layout.HBox
+import javafx.scene.layout.Priority
+import javafx.scene.layout.VBox
 
 /**
  * Result of the producer dialog. Bytes are produced by the dialog from the user's text input;
@@ -41,63 +41,46 @@ class ProducerDialog(
         items.setAll(topics)
         value = initialTopic ?: topics.firstOrNull()
         isEditable = true
+        prefWidth = 320.0
     }
-    private val partitionField = TextField().apply { promptText = "auto" }
-    private val keyField = TextField(initialKey.orEmpty())
+    private val partitionField = TextField().apply { promptText = "auto"; prefWidth = 120.0 }
+    private val keyField = TextField(initialKey.orEmpty()).apply { prefWidth = 480.0 }
     private val valueArea = TextArea(initialValue.orEmpty()).apply {
         prefRowCount = 8
+        prefWidth = 480.0
         style = "-fx-font-family: monospace; -fx-font-size: 12;"
     }
-    private val headersTable = TableView<HeaderRow>().apply {
-        prefHeight = 110.0
-        isEditable = true
-    }
-    private val headerRows = FXCollections.observableArrayList<HeaderRow>().apply {
-        addAll(initialHeaders.map { (k, v) -> HeaderRow(k, v ?: "") })
-    }
+    private val headersContainer = VBox(4.0)
+    private val headerRows = FXCollections.observableArrayList<HeaderEditorRow>()
 
     init {
         title = "Send message"
         headerText = "Produce a record to the broker."
 
-        val nameCol = TableColumn<HeaderRow, String>("Header").apply {
-            cellValueFactory = PropertyValueFactory("name")
-            cellFactory = TextFieldTableCell.forTableColumn()
-            isEditable = true
-            prefWidth = 180.0
-            setOnEditCommit { e -> e.rowValue.nameProperty.set(e.newValue ?: "") }
+        // Seed initial headers
+        if (initialHeaders.isEmpty()) {
+            addHeaderRow("", "")
+        } else {
+            initialHeaders.forEach { (k, v) -> addHeaderRow(k, v ?: "") }
         }
-        val valCol = TableColumn<HeaderRow, String>("Value").apply {
-            cellValueFactory = PropertyValueFactory("value")
-            cellFactory = TextFieldTableCell.forTableColumn()
-            isEditable = true
-            prefWidth = 380.0
-            setOnEditCommit { e -> e.rowValue.valueProperty.set(e.newValue ?: "") }
-        }
-        headersTable.columns.setAll(nameCol, valCol)
-        headersTable.items = headerRows
 
-        val addHeaderBtn = Button("+ Header").apply { setOnAction { headerRows.add(HeaderRow("", "")) } }
-        val rmHeaderBtn = Button("✕ Header").apply {
-            setOnAction { headersTable.selectionModel.selectedItem?.let(headerRows::remove) }
-        }
-        val headersBar = HBox(8.0, Label("Headers:"), addHeaderBtn, rmHeaderBtn)
+        val addHeaderBtn = Button("+ Header").apply { setOnAction { addHeaderRow("", "") } }
+        val headersBar = HBox(8.0, Label("Headers:"), addHeaderBtn).apply { alignment = Pos.CENTER_LEFT }
 
-        val grid = GridPane().apply {
-            hgap = 8.0; vgap = 8.0; padding = Insets(12.0)
+        val headersScroll = ScrollPane(headersContainer).apply {
+            isFitToWidth = true
+            prefHeight = 130.0
+            hbarPolicy = ScrollPane.ScrollBarPolicy.NEVER
         }
+
+        val grid = GridPane().apply { hgap = 8.0; vgap = 8.0; padding = Insets(12.0) }
         var row = 0
         grid.add(Label("Topic:"), 0, row); grid.add(topicBox, 1, row++)
         grid.add(Label("Partition:"), 0, row); grid.add(partitionField, 1, row++)
         grid.add(Label("Key:"), 0, row); grid.add(keyField, 1, row++)
         grid.add(Label("Value:"), 0, row); grid.add(valueArea, 1, row++)
         grid.add(headersBar, 0, row, 2, 1); row++
-        grid.add(headersTable, 0, row, 2, 1)
-
-        topicBox.prefWidth = 320.0
-        partitionField.prefWidth = 120.0
-        keyField.prefWidth = 480.0
-        valueArea.prefWidth = 480.0
+        grid.add(headersScroll, 0, row, 2, 1)
 
         dialogPane.content = grid
         dialogPane.buttonTypes.addAll(ButtonType.OK, ButtonType.CANCEL)
@@ -111,16 +94,36 @@ class ProducerDialog(
                 key = keyField.text?.takeIf { it.isNotEmpty() }?.toByteArray(),
                 value = valueArea.text?.takeIf { it.isNotEmpty() }?.toByteArray(),
                 headers = headerRows
-                    .filter { it.getName().isNotBlank() }
-                    .associate { it.getName() to it.getValue().toByteArray() },
+                    .filter { it.name.isNotBlank() }
+                    .associate { it.name to it.valueOrNull?.toByteArray() },
             )
         }
     }
+
+    private fun addHeaderRow(name: String, value: String) {
+        val row = HeaderEditorRow(name, value) { toRemove -> removeHeaderRow(toRemove) }
+        headerRows.add(row)
+        headersContainer.children.add(row.node)
+    }
+
+    private fun removeHeaderRow(row: HeaderEditorRow) {
+        headerRows.remove(row)
+        headersContainer.children.remove(row.node)
+    }
 }
 
-class HeaderRow(name: String, value: String) {
-    val nameProperty = SimpleStringProperty(name)
-    val valueProperty = SimpleStringProperty(value)
-    fun getName(): String = nameProperty.get()
-    fun getValue(): String = valueProperty.get()
+/** A single editable header row: [name | value | ✕]. Bound to live TextFields so values are always current. */
+private class HeaderEditorRow(
+    initialName: String,
+    initialValue: String,
+    onRemove: (HeaderEditorRow) -> Unit,
+) {
+    private val nameField = TextField(initialName).apply { promptText = "header-name"; prefWidth = 180.0 }
+    private val valueField = TextField(initialValue).apply { promptText = "header value"; HBox.setHgrow(this, Priority.ALWAYS) }
+    private val removeBtn = Button("✕").apply { setOnAction { onRemove(this@HeaderEditorRow) } }
+
+    val node: HBox = HBox(6.0, nameField, valueField, removeBtn).apply { alignment = Pos.CENTER_LEFT }
+
+    val name: String get() = nameField.text?.trim().orEmpty()
+    val valueOrNull: String? get() = valueField.text
 }

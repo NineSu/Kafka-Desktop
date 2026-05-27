@@ -58,7 +58,13 @@ class MainView {
     private val detailPane = MessageDetailPane()
     private val topicHeader = Label("(no topic)").apply { style = "-fx-padding: 6 12 6 12; -fx-font-weight: bold;" }
     private val statsLabel = Label("").apply { style = "-fx-padding: 6 12 6 12;" }
+    private val actionLabel = Label("").apply { style = "-fx-padding: 6 12 6 12; -fx-text-fill: #2c3e50;" }
     private val sendButton = javafx.scene.control.Button("Send message…").apply { isDisable = true }
+    private val prevPageBtn = javafx.scene.control.Button("◀ Prev").apply { isDisable = true }
+    private val nextPageBtn = javafx.scene.control.Button("Next ▶").apply { isDisable = true }
+    private val pageLabel = Label("").apply { style = "-fx-padding: 6 8 6 8;" }
+    private var pageOffset: Long = 0L
+    private val pageSize: Int = 500
 
     private var connection: KafkaConnection? = null
     private var currentConsumer: KafkaMessageConsumer? = null
@@ -92,9 +98,10 @@ class MainView {
         wireTopicSelection()
         wireRowSelection()
         wireSendButton()
+        wirePagination()
 
         val left = VBox(topicList).apply { VBox.setVgrow(topicList, Priority.ALWAYS) }
-        val headerRow = HBox(8.0, topicHeader, statsLabel, sendButton)
+        val headerRow = HBox(8.0, topicHeader, statsLabel, prevPageBtn, pageLabel, nextPageBtn, sendButton, actionLabel)
         val tableArea = BorderPane().apply {
             top = headerRow
             center = messageTable
@@ -199,6 +206,17 @@ class MainView {
         sendButton.setOnAction { openProducerDialog(null) }
     }
 
+    private fun wirePagination() {
+        prevPageBtn.setOnAction {
+            pageOffset = (pageOffset - pageSize).coerceAtLeast(0L)
+            refreshTable()
+        }
+        nextPageBtn.setOnAction {
+            pageOffset += pageSize
+            refreshTable()
+        }
+    }
+
     private fun openProducerDialog(replayRow: MessageRowFx?) {
         val topic = currentTopic ?: allTopics.firstOrNull()
         // For replay, fetch the full message to get its bytes; otherwise blank
@@ -231,10 +249,12 @@ class MainView {
         }
         task.setOnSucceeded {
             val rm = task.value
-            statsLabel.text = "sent → ${rm.topic}:${rm.partition}@${rm.offset}"
+            actionLabel.text = "✓ sent → ${rm.topic}:${rm.partition}@${rm.offset}"
+            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #16a085; -fx-font-weight: bold;"
         }
         task.setOnFailed {
-            statsLabel.text = "send failed: ${task.exception.message ?: task.exception.javaClass.simpleName}"
+            actionLabel.text = "✗ send failed: ${task.exception.message ?: task.exception.javaClass.simpleName}"
+            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #c0392b; -fx-font-weight: bold;"
             log.error("send failed", task.exception)
         }
         Thread(task, "producer-send").apply { isDaemon = true }.start()
@@ -294,8 +314,12 @@ class MainView {
         inboxQueue.clear()
         tableRows.clear()
         currentTopic = topic
+        pageOffset = 0L
         topicHeader.text = "Topic: $topic (from beginning)"
         statsLabel.text = ""
+        pageLabel.text = ""
+        prevPageBtn.isDisable = true
+        nextPageBtn.isDisable = true
 
         val consumer = KafkaMessageConsumer(
             bootstrapServers = bootstrap,
@@ -333,10 +357,12 @@ class MainView {
 
     private fun refreshTable() {
         val topic = currentTopic ?: return
+        val capturedOffset = pageOffset
+        val capturedLimit = pageSize
         val task = object : Task<Pair<List<MessageRow>, Long>>() {
             override fun call(): Pair<List<MessageRow>, Long> {
                 val total = repo.count(clusterId, topic, currentFilter)
-                val rows = repo.query(clusterId, topic, currentFilter, offsetPage = 0L, limit = 1_000)
+                val rows = repo.query(clusterId, topic, currentFilter, offsetPage = capturedOffset, limit = capturedLimit)
                 return rows to total
             }
         }
@@ -355,7 +381,14 @@ class MainView {
             } finally {
                 refreshing = false
             }
-            statsLabel.text = "${rows.size} shown / $total total"
+            val pageStart = capturedOffset + 1
+            val pageEnd = capturedOffset + rows.size
+            statsLabel.text = "$pageStart-$pageEnd / $total total"
+            val totalPages = if (total == 0L) 1 else ((total - 1) / capturedLimit) + 1
+            val currentPage = (capturedOffset / capturedLimit) + 1
+            pageLabel.text = "page $currentPage/$totalPages"
+            prevPageBtn.isDisable = capturedOffset == 0L
+            nextPageBtn.isDisable = pageEnd >= total
         }
         task.setOnFailed {
             log.warn("Refresh failed", task.exception)
