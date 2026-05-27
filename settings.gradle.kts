@@ -4,6 +4,7 @@ include("app")
 include("core-kafka")
 include("core-filter")
 include("core-storage")
+include("core-auth")
 include("ui-common")
 
 pluginManagement {
