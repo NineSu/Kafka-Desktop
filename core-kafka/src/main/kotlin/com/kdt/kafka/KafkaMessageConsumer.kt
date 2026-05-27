@@ -1,5 +1,7 @@
 package com.kdt.kafka
 
+import com.kdt.auth.AuthStrategy
+import com.kdt.auth.PlaintextAuth
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.consumer.KafkaConsumer
 import org.apache.kafka.common.serialization.ByteArrayDeserializer
@@ -35,6 +37,7 @@ class KafkaMessageConsumer(
     private val fromBeginning: Boolean = true,
     private val onMessage: (ConsumedMessage) -> Unit,
     private val onError: (Throwable) -> Unit = {},
+    auth: AuthStrategy = PlaintextAuth,
 ) : AutoCloseable {
 
     private val log = LoggerFactory.getLogger(KafkaMessageConsumer::class.java)
@@ -49,6 +52,7 @@ class KafkaMessageConsumer(
             put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer::class.java.name)
             put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer::class.java.name)
             put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 500)
+            auth.applyTo(this)
         }
     )
 

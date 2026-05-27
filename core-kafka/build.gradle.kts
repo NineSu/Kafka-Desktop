@@ -1,4 +1,5 @@
 dependencies {
+    api(project(":core-auth"))
     implementation(libs.kafka.clients)
     implementation(libs.slf4j.api)
 
