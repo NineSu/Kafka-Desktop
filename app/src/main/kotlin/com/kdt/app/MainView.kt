@@ -56,6 +56,7 @@ class MainView {
     private var currentConsumer: KafkaMessageConsumer? = null
     private var currentTopic: String? = null
     private var currentFilter: FilterNode? = null
+    @Volatile private var refreshing: Boolean = false
 
     // Producer thread fills this queue; UI-side timer batches it into DuckDB.
     private val inboxQueue = ConcurrentLinkedQueue<ConsumedMessage>()
@@ -113,9 +114,12 @@ class MainView {
     private fun wireRowSelection() {
         messageTable.selectionModel.selectedItemProperty().addListener { _, _, row ->
             val topic = currentTopic
-            if (row == null || topic == null) {
-                detailPane.bind(null); return@addListener
+            if (row == null) {
+                // Refresh transiently nulls selection — only clear detail when not refreshing
+                if (!refreshing) detailPane.bind(null)
+                return@addListener
             }
+            if (topic == null) { detailPane.bind(null); return@addListener }
             val task = object : Task<MessageRow?>() {
                 override fun call(): MessageRow? =
                     repo.findOne(clusterId, topic, row.getPartition(), row.getOffset())
@@ -261,7 +265,19 @@ class MainView {
         }
         task.setOnSucceeded {
             val (rows, total) = task.value
-            tableRows.setAll(rows.map { it.toFx() })
+            // Preserve selection across the refresh
+            val selected = messageTable.selectionModel.selectedItem
+            val selKey = selected?.let { it.getPartition() to it.getOffset() }
+            refreshing = true
+            try {
+                tableRows.setAll(rows.map { it.toFx() })
+                if (selKey != null) {
+                    val match = tableRows.firstOrNull { it.getPartition() == selKey.first && it.getOffset() == selKey.second }
+                    if (match != null) messageTable.selectionModel.select(match)
+                }
+            } finally {
+                refreshing = false
+            }
             statsLabel.text = "${rows.size} shown / $total total"
         }
         task.setOnFailed {
