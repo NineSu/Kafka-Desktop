@@ -13,8 +13,12 @@ data class ConsumerGroupInfo(
     val members: Int,
     val lags: List<PartitionLag>,
 ) {
-    /** Reset is only accepted by the broker when no consumers are active. */
-    val isResetSafe: Boolean get() = state == "EMPTY" || state == "DEAD"
+    /**
+     * Reset is only accepted by the broker when no consumers are active.
+     * Compared case-insensitively because ConsumerGroupState.toString() yields friendly
+     * names ("Empty"/"Dead"), not the enum constant names ("EMPTY"/"DEAD").
+     */
+    val isResetSafe: Boolean get() = state.equals("EMPTY", ignoreCase = true) || state.equals("DEAD", ignoreCase = true)
 }
 
 data class PartitionLag(

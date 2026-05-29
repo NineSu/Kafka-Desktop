@@ -72,6 +72,7 @@ class ConsumerGroupDialog(
         val e = TableColumn<LagRow, Number>("Log end").apply { cellValueFactory = PropertyValueFactory("logEnd"); prefWidth = 110.0 }
         val l = TableColumn<LagRow, Number>("Lag").apply { cellValueFactory = PropertyValueFactory("lag"); prefWidth = 110.0 }
         lagTable.columns.setAll(t, p, c, e, l)
+        lagTable.columnResizePolicy = TableView.CONSTRAINED_RESIZE_POLICY
         lagTable.placeholder = Label("No committed offsets.")
     }
 

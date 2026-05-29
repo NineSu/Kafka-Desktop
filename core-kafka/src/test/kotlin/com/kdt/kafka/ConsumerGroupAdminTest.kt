@@ -16,6 +16,15 @@ class ConsumerGroupAdminTest {
     }
 
     @Test
+    fun `isResetSafe matches Kafka's friendly state strings`() {
+        // ConsumerGroupState.toString() returns "Empty"/"Dead"/"Stable", not enum names.
+        fun info(state: String) = ConsumerGroupInfo("g", state, members = 0, lags = emptyList())
+        info("Empty").isResetSafe shouldBe true
+        info("Dead").isResetSafe shouldBe true
+        info("Stable").isResetSafe shouldBe false
+    }
+
+    @Test
     fun `computeLag is the gap, floored at zero`() {
         PartitionLag.computeLag(committed = 90, logEnd = 100) shouldBe 10
         PartitionLag.computeLag(committed = 100, logEnd = 100) shouldBe 0
