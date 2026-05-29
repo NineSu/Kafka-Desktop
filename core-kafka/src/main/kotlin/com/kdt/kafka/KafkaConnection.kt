@@ -22,6 +22,12 @@ class KafkaConnection(
     fun listTopics(): Set<String> =
         adminClient.listTopics().names().get()
 
+    /** Topic administration sharing this connection's AdminClient. */
+    fun topicAdmin(): TopicAdmin = TopicAdmin(adminClient)
+
+    /** Consumer-group administration sharing this connection's AdminClient. */
+    fun consumerGroupAdmin(): ConsumerGroupAdmin = ConsumerGroupAdmin(adminClient)
+
     override fun close() {
         adminClient.close()
     }

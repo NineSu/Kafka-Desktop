@@ -42,6 +42,7 @@ import javafx.scene.layout.BorderPane
 import javafx.scene.layout.HBox
 import javafx.scene.layout.Priority
 import javafx.scene.layout.VBox
+import javafx.geometry.Insets
 import javafx.stage.Stage
 import org.slf4j.LoggerFactory
 import java.time.Instant
@@ -64,6 +65,9 @@ class MainView {
         }
     }
     private val topicList = ListView<String>()
+    private val newTopicBtn = javafx.scene.control.Button("＋ Topic").apply { isDisable = true }
+    private val groupsBtn = javafx.scene.control.Button("Groups…").apply { isDisable = true }
+    private val refreshTopicsBtn = javafx.scene.control.Button("⟳").apply { isDisable = true }
     private val messageTable = TableView<MessageRowFx>()
     private val tableRows = FXCollections.observableArrayList<MessageRowFx>()
     private val detailPane = MessageDetailPane()
@@ -115,9 +119,13 @@ class MainView {
         wireSendButton()
         wireExportButton()
         wirePagination()
+        wireTopicAdmin()
         loadConnections()
 
-        val left = VBox(topicList).apply { VBox.setVgrow(topicList, Priority.ALWAYS) }
+        val topicToolbar = HBox(6.0, newTopicBtn, groupsBtn, refreshTopicsBtn).apply {
+            padding = Insets(6.0, 6.0, 6.0, 6.0)
+        }
+        val left = VBox(topicToolbar, topicList).apply { VBox.setVgrow(topicList, Priority.ALWAYS) }
         val headerRow = HBox(8.0, topicHeader, statsLabel, prevPageBtn, pageLabel, nextPageBtn, sendButton, exportButton, actionLabel)
         val tableArea = BorderPane().apply {
             top = headerRow
@@ -322,6 +330,137 @@ class MainView {
         connectionForm.onManage = { openConnectionManager() }
     }
 
+    // ---- Topic & consumer-group administration (iter-8) ----
+
+    private fun wireTopicAdmin() {
+        newTopicBtn.setOnAction { onCreateTopic() }
+        refreshTopicsBtn.setOnAction { refreshTopicList() }
+        groupsBtn.setOnAction { openConsumerGroups() }
+
+        // Right-click a topic → Describe / Add partitions / Delete.
+        topicList.setCellFactory {
+            val cell = javafx.scene.control.ListCell<String>()
+            cell.textProperty().bind(cell.itemProperty())
+            val menu = javafx.scene.control.ContextMenu()
+            val describe = javafx.scene.control.MenuItem("Describe…").apply {
+                setOnAction { cell.item?.let { onDescribeTopic(it) } }
+            }
+            val addParts = javafx.scene.control.MenuItem("Add partitions…").apply {
+                setOnAction { cell.item?.let { onAddPartitions(it) } }
+            }
+            val delete = javafx.scene.control.MenuItem("Delete…").apply {
+                setOnAction { cell.item?.let { onDeleteTopic(it) } }
+            }
+            menu.items.addAll(describe, addParts, delete)
+            cell.contextMenuProperty().bind(
+                javafx.beans.binding.Bindings.`when`(cell.emptyProperty())
+                    .then(null as javafx.scene.control.ContextMenu?).otherwise(menu)
+            )
+            cell
+        }
+    }
+
+    private fun topicAdmin(): com.kdt.kafka.TopicAdmin? = connection?.topicAdmin()
+
+    private fun runAdmin(busyMsg: String, work: () -> Unit, okMsg: () -> String, onOk: () -> Unit = {}) {
+        actionLabel.text = busyMsg
+        actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #2c3e50;"
+        val task = object : Task<Unit>() { override fun call() = work() }
+        task.setOnSucceeded {
+            actionLabel.text = okMsg()
+            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #16a085; -fx-font-weight: bold;"
+            onOk()
+        }
+        task.setOnFailed {
+            val t = task.exception
+            actionLabel.text = "✗ ${t?.message ?: t?.javaClass?.simpleName}"
+            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #c0392b; -fx-font-weight: bold;"
+            log.error("admin op failed", t)
+        }
+        Thread(task, "topic-admin").apply { isDaemon = true }.start()
+    }
+
+    private fun onCreateTopic() {
+        val admin = topicAdmin() ?: return
+        val req = CreateTopicDialog().showAndWait().orElse(null) ?: return
+        runAdmin(
+            "Creating ${req.name}…",
+            { admin.create(req.name, req.partitions, req.replication, req.configs) },
+            { "✓ created ${req.name}" },
+            onOk = { refreshTopicList() },
+        )
+    }
+
+    private fun onDescribeTopic(topic: String) {
+        val admin = topicAdmin() ?: return
+        var detail: com.kdt.kafka.TopicDetail? = null
+        runAdmin(
+            "Describing $topic…",
+            { detail = admin.describe(topic) },
+            { "✓ described $topic" },
+            onOk = { detail?.let { TopicDetailDialog(it).showAndWait() } },
+        )
+    }
+
+    private fun onAddPartitions(topic: String) {
+        val admin = topicAdmin() ?: return
+        // Need current count first; describe then prompt.
+        var current = 0
+        runAdmin(
+            "Reading $topic…",
+            { current = admin.describe(topic).partitions },
+            { "ready" },
+            onOk = {
+                val newTotal = AddPartitionsDialog(topic, current).showAndWait().orElse(null)
+                if (newTotal != null) {
+                    runAdmin(
+                        "Adding partitions to $topic…",
+                        { admin.addPartitions(topic, newTotal) },
+                        { "✓ $topic now has $newTotal partitions" },
+                    )
+                }
+            },
+        )
+    }
+
+    private fun onDeleteTopic(topic: String) {
+        val admin = topicAdmin() ?: return
+        val confirmed = ConfirmNameDialog(
+            "Delete topic", "This permanently deletes topic \"$topic\" and all its data.", topic
+        ).showAndWait().orElse(false)
+        if (!confirmed) return
+        runAdmin(
+            "Deleting $topic…",
+            { admin.delete(topic) },
+            { "✓ deleted $topic" },
+            onOk = { refreshTopicList() },
+        )
+    }
+
+    private fun refreshTopicList() {
+        val admin = topicAdmin() ?: return
+        var topics: List<String> = emptyList()
+        runAdmin(
+            "Refreshing topics…",
+            { topics = admin.list() },
+            { "✓ ${topics.size} topic(s)" },
+            onOk = {
+                allTopics = topics
+                topicList.items = FXCollections.observableArrayList(topics)
+            },
+        )
+    }
+
+    private fun openConsumerGroups() {
+        val conn = connection ?: return
+        val admin = conn.consumerGroupAdmin()
+        ConsumerGroupDialog(
+            listGroups = { admin.list() },
+            describeGroup = { admin.describe(it) },
+            resetOffsets = { g, t, spec -> admin.resetOffsets(g, t, spec) },
+        ).showAndWait()
+    }
+
     /** Load saved connections from the store into the dropdown. */
     private fun loadConnections() {
         val vms = connectionStore.list().map { ConnectionMapping.toVM(it) }
@@ -397,6 +536,9 @@ class MainView {
             connectionForm.setBusy(false)
             connectionForm.setStatus("Connected — ${topics.size} topic(s)")
             sendButton.isDisable = false
+            newTopicBtn.isDisable = false
+            groupsBtn.isDisable = false
+            refreshTopicsBtn.isDisable = false
         }
         task.setOnFailed {
             val t = task.exception
