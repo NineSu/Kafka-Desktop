@@ -11,6 +11,7 @@ import com.kdt.kafka.SendResult
 import com.kdt.kafka.StartingPosition
 import com.kdt.storage.ConnectionStore
 import com.kdt.storage.MessageExporter
+import com.kdt.storage.MessageImporter
 import com.kdt.storage.MessageRepository
 import com.kdt.storage.MessageRow
 import com.kdt.ui.common.ConnectionForm
@@ -75,6 +76,7 @@ class MainView {
     private val statsLabel = Label("").apply { style = "-fx-padding: 6 12 6 12;" }
     private val actionLabel = Label("").apply { style = "-fx-padding: 6 12 6 12; -fx-text-fill: #2c3e50;" }
     private val sendButton = javafx.scene.control.Button("Send message…").apply { isDisable = true }
+    private val importButton = javafx.scene.control.Button("Import…").apply { isDisable = true }
     private val exportButton = javafx.scene.control.Button("Export…").apply { isDisable = true }
     private val prevPageBtn = javafx.scene.control.Button("◀ Prev").apply { isDisable = true }
     private val nextPageBtn = javafx.scene.control.Button("Next ▶").apply { isDisable = true }
@@ -118,6 +120,7 @@ class MainView {
         wireRowSelection()
         wireSendButton()
         wireExportButton()
+        wireImportButton()
         wirePagination()
         wireTopicAdmin()
         loadConnections()
@@ -126,7 +129,7 @@ class MainView {
             padding = Insets(6.0, 6.0, 6.0, 6.0)
         }
         val left = VBox(topicToolbar, topicList).apply { VBox.setVgrow(topicList, Priority.ALWAYS) }
-        val headerRow = HBox(8.0, topicHeader, statsLabel, prevPageBtn, pageLabel, nextPageBtn, sendButton, exportButton, actionLabel)
+        val headerRow = HBox(8.0, topicHeader, statsLabel, prevPageBtn, pageLabel, nextPageBtn, sendButton, importButton, exportButton, actionLabel)
         val tableArea = BorderPane().apply {
             top = headerRow
             center = messageTable
@@ -234,6 +237,71 @@ class MainView {
     private fun wireExportButton() {
         exportButton.setOnAction { openExportDialog() }
     }
+
+    private fun wireImportButton() {
+        importButton.setOnAction { openImportDialog() }
+    }
+
+    private fun openImportDialog() {
+        if (currentBootstrap.isBlank()) return
+        val chooser = javafx.stage.FileChooser().apply {
+            title = "Import messages from file"
+            extensionFilters.addAll(
+                javafx.stage.FileChooser.ExtensionFilter("Messages (csv/json/jsonl)", "*.csv", "*.json", "*.jsonl"),
+                javafx.stage.FileChooser.ExtensionFilter("All files", "*.*"),
+            )
+        }
+        val file = chooser.showOpenDialog(importButton.scene.window) ?: return
+        val req = ImportDialog(
+            fileName = file.name,
+            topics = allTopics,
+            inferredFormat = inferFormat(file.name),
+            defaultTopic = currentTopic ?: allTopics.firstOrNull(),
+        ).showAndWait().orElse(null) ?: return
+
+        actionLabel.text = "Importing…"
+        actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #2c3e50;"
+        val producer = currentProducer ?: KafkaMessageProducer(currentBootstrap, currentAuth).also { currentProducer = it }
+        val task = object : Task<ImportOutcome>() {
+            override fun call(): ImportOutcome {
+                val futures = ArrayList<java.util.concurrent.Future<SendResult>>()
+                val skipped = MessageImporter().parse(req.format, file.toPath()) { row ->
+                    futures += producer.send(
+                        req.topic,
+                        row.key?.toByteArray(),
+                        row.value?.toByteArray(),
+                        row.headers.mapValues { it.value?.toByteArray() },
+                        null,
+                    )
+                }
+                var sent = 0L; var failed = 0L
+                for (f in futures) {
+                    try { f.get(); sent++ } catch (_: Exception) { failed++ }
+                }
+                return ImportOutcome(sent, skipped, failed)
+            }
+        }
+        task.setOnSucceeded {
+            val o = task.value
+            actionLabel.text = "✓ sent ${o.sent} · skipped ${o.skipped} · failed ${o.failed} → ${req.topic}"
+            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: ${if (o.failed == 0L) "#16a085" else "#c0392b"}; -fx-font-weight: bold;"
+        }
+        task.setOnFailed {
+            actionLabel.text = "✗ import failed: ${task.exception?.message ?: task.exception?.javaClass?.simpleName}"
+            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #c0392b; -fx-font-weight: bold;"
+            log.error("import failed", task.exception)
+        }
+        Thread(task, "import").apply { isDaemon = true }.start()
+    }
+
+    private fun inferFormat(fileName: String): com.kdt.storage.ExportFormat = when {
+        fileName.endsWith(".csv", true) -> com.kdt.storage.ExportFormat.CSV
+        fileName.endsWith(".json", true) -> com.kdt.storage.ExportFormat.JSON
+        else -> com.kdt.storage.ExportFormat.JSONL
+    }
+
+    private data class ImportOutcome(val sent: Long, val skipped: Long, val failed: Long)
+
 
     private fun openExportDialog() {
         val topic = currentTopic ?: return
@@ -536,6 +604,7 @@ class MainView {
             connectionForm.setBusy(false)
             connectionForm.setStatus("Connected — ${topics.size} topic(s)")
             sendButton.isDisable = false
+            importButton.isDisable = false
             newTopicBtn.isDisable = false
             groupsBtn.isDisable = false
             refreshTopicsBtn.isDisable = false
