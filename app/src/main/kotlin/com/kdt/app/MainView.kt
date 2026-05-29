@@ -1,18 +1,28 @@
 package com.kdt.app
 
 import com.kdt.filter.FilterNode
+import com.kdt.auth.AuthStrategy
+import com.kdt.auth.PlaintextAuth
 import com.kdt.kafka.ConsumedMessage
 import com.kdt.kafka.KafkaConnection
 import com.kdt.kafka.KafkaMessageConsumer
 import com.kdt.kafka.KafkaMessageProducer
 import com.kdt.kafka.SendResult
+import com.kdt.kafka.StartingPosition
+import com.kdt.storage.ConnectionStore
+import com.kdt.storage.MessageExporter
 import com.kdt.storage.MessageRepository
 import com.kdt.storage.MessageRow
 import com.kdt.ui.common.ConnectionForm
+import com.kdt.ui.common.ConnectionManagerDialog
+import com.kdt.ui.common.ConnectionVM
+import com.kdt.ui.common.ExportDialog
 import com.kdt.ui.common.FilterBuilder
 import com.kdt.ui.common.MessageDetailPane
 import com.kdt.ui.common.ProducerDialog
 import com.kdt.ui.common.ProducerRequest
+import com.kdt.ui.common.StartChoice
+import com.kdt.ui.common.StartFromPicker
 import javafx.animation.AnimationTimer
 import javafx.application.Platform
 import javafx.beans.property.SimpleStringProperty
@@ -46,6 +56,7 @@ class MainView {
     private val clusterId = "default"  // multi-cluster comes in a later iteration
 
     private val repo = MessageRepository()
+    private val connectionStore = ConnectionStore()
     private val connectionForm = ConnectionForm()
     private val filterBuilder = FilterBuilder().apply {
         onApply = { node ->
@@ -60,6 +71,7 @@ class MainView {
     private val statsLabel = Label("").apply { style = "-fx-padding: 6 12 6 12;" }
     private val actionLabel = Label("").apply { style = "-fx-padding: 6 12 6 12; -fx-text-fill: #2c3e50;" }
     private val sendButton = javafx.scene.control.Button("Send message…").apply { isDisable = true }
+    private val exportButton = javafx.scene.control.Button("Export…").apply { isDisable = true }
     private val prevPageBtn = javafx.scene.control.Button("◀ Prev").apply { isDisable = true }
     private val nextPageBtn = javafx.scene.control.Button("Next ▶").apply { isDisable = true }
     private val pageLabel = Label("").apply { style = "-fx-padding: 6 8 6 8;" }
@@ -71,6 +83,9 @@ class MainView {
     private var currentProducer: KafkaMessageProducer? = null
     private var currentTopic: String? = null
     private var currentFilter: FilterNode? = null
+    // Bootstrap + auth of the currently-connected cluster; reused by consumer & producer.
+    private var currentBootstrap: String = ""
+    private var currentAuth: AuthStrategy = PlaintextAuth
     @Volatile private var refreshing: Boolean = false
     private var allTopics: List<String> = emptyList()
 
@@ -98,10 +113,12 @@ class MainView {
         wireTopicSelection()
         wireRowSelection()
         wireSendButton()
+        wireExportButton()
         wirePagination()
+        loadConnections()
 
         val left = VBox(topicList).apply { VBox.setVgrow(topicList, Priority.ALWAYS) }
-        val headerRow = HBox(8.0, topicHeader, statsLabel, prevPageBtn, pageLabel, nextPageBtn, sendButton, actionLabel)
+        val headerRow = HBox(8.0, topicHeader, statsLabel, prevPageBtn, pageLabel, nextPageBtn, sendButton, exportButton, actionLabel)
         val tableArea = BorderPane().apply {
             top = headerRow
             center = messageTable
@@ -206,6 +223,46 @@ class MainView {
         sendButton.setOnAction { openProducerDialog(null) }
     }
 
+    private fun wireExportButton() {
+        exportButton.setOnAction { openExportDialog() }
+    }
+
+    private fun openExportDialog() {
+        val topic = currentTopic ?: return
+        val total = repo.count(clusterId, topic, currentFilter)
+        val choice = ExportDialog(total).showAndWait().orElse(null) ?: return
+        val format = ConnectionMapping.toExportFormat(choice)
+
+        val chooser = javafx.stage.FileChooser().apply {
+            title = "Export $topic"
+            initialFileName = "$topic.${format.extension}"
+            extensionFilters.add(
+                javafx.stage.FileChooser.ExtensionFilter(format.displayName, "*.${format.extension}")
+            )
+        }
+        val file = chooser.showSaveDialog(exportButton.scene.window) ?: return
+
+        actionLabel.text = "Exporting…"
+        actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #2c3e50;"
+        val capturedFilter = currentFilter
+        val task = object : Task<Long>() {
+            override fun call(): Long =
+                MessageExporter().export(format, file.toPath()) { sink ->
+                    repo.streamFiltered(clusterId, topic, capturedFilter) { row -> sink(row) }
+                }
+        }
+        task.setOnSucceeded {
+            actionLabel.text = "✓ exported ${task.value} rows → ${file.name}"
+            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #16a085; -fx-font-weight: bold;"
+        }
+        task.setOnFailed {
+            actionLabel.text = "✗ export failed: ${task.exception?.message ?: task.exception?.javaClass?.simpleName}"
+            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #c0392b; -fx-font-weight: bold;"
+            log.error("export failed", task.exception)
+        }
+        Thread(task, "export").apply { isDaemon = true }.start()
+    }
+
     private fun wirePagination() {
         prevPageBtn.setOnAction {
             pageOffset = (pageOffset - pageSize).coerceAtLeast(0L)
@@ -240,9 +297,9 @@ class MainView {
     } catch (_: Exception) { emptyMap() }
 
     private fun sendOne(req: ProducerRequest) {
-        val bootstrap = connectionForm.bootstrapServers.value.orEmpty().trim()
+        val bootstrap = currentBootstrap.trim()
         if (bootstrap.isEmpty()) return
-        val producer = currentProducer ?: KafkaMessageProducer(bootstrap, connectionForm.authStrategy.value).also { currentProducer = it }
+        val producer = currentProducer ?: KafkaMessageProducer(bootstrap, currentAuth).also { currentProducer = it }
         val task = object : Task<SendResult>() {
             override fun call(): SendResult =
                 producer.send(req.topic, req.key, req.value, req.headers, req.partition).get()
@@ -262,20 +319,63 @@ class MainView {
 
     private fun wireConnectionForm() {
         connectionForm.onConnect = { onConnectClicked() }
+        connectionForm.onManage = { openConnectionManager() }
+    }
+
+    /** Load saved connections from the store into the dropdown. */
+    private fun loadConnections() {
+        val vms = connectionStore.list().map { ConnectionMapping.toVM(it) }
+        connectionForm.setConnections(vms)
+        if (vms.isEmpty()) {
+            connectionForm.setStatus("No saved connections — click \"Manage…\" to add one.")
+        }
+    }
+
+    private fun openConnectionManager() {
+        ConnectionManagerDialog(
+            connections = connectionForm.connections,
+            onSave = { vm ->
+                val (saved, secrets) = ConnectionMapping.toSaved(vm)
+                connectionStore.save(saved, secrets)
+            },
+            onDelete = { id -> connectionStore.delete(id) },
+            onTest = { vm, report -> testConnection(vm, report) },
+            onLoadSecrets = { vm -> ConnectionMapping.loadSecretsInto(vm, connectionStore) },
+        ).showAndWait()
+    }
+
+    /** Background connectivity probe for the connection manager's "Test" button. */
+    private fun testConnection(vm: ConnectionVM, report: (String, Boolean) -> Unit) {
+        val task = object : Task<Int>() {
+            override fun call(): Int {
+                KafkaConnection(vm.bootstrap, vm.authState.toAuthStrategy()).use { conn ->
+                    return conn.listTopics().size
+                }
+            }
+        }
+        task.setOnSucceeded { report("✓ OK — ${task.value} topic(s)", true) }
+        task.setOnFailed {
+            val t = task.exception
+            report("✗ ${t?.message ?: t?.javaClass?.simpleName}", false)
+        }
+        Thread(task, "conn-test").apply { isDaemon = true }.start()
     }
 
     private fun wireTopicSelection() {
         topicList.selectionModel.selectedItemProperty().addListener { _, _, topic ->
-            if (topic != null) startConsuming(topic)
+            if (topic != null) promptStartAndConsume(topic)
         }
     }
 
     private fun onConnectClicked() {
-        val bootstrap = connectionForm.bootstrapServers.value.orEmpty().trim()
-        if (bootstrap.isEmpty()) {
-            connectionForm.setStatus("Enter bootstrap.servers first.", error = true); return
+        val vm = connectionForm.selectedConnection() ?: run {
+            connectionForm.setStatus("Select a connection first.", error = true); return
         }
-        val auth = connectionForm.authStrategy.value
+        ConnectionMapping.loadSecretsInto(vm, connectionStore)
+        val bootstrap = vm.bootstrap.trim()
+        val auth = vm.authState.toAuthStrategy()
+        currentBootstrap = bootstrap
+        currentAuth = auth
         connectionForm.setBusy(true)
         connectionForm.setStatus("Connecting to $bootstrap …")
 
@@ -305,8 +405,14 @@ class MainView {
         Thread(task, "kafka-connect").apply { isDaemon = true }.start()
     }
 
-    private fun startConsuming(topic: String) {
-        val bootstrap = connectionForm.bootstrapServers.value?.trim().orEmpty()
+    /** Topic clicked → ask where to start, then begin consuming. */
+    private fun promptStartAndConsume(topic: String) {
+        val choice = StartFromPicker(topic).showAndWait().orElse(null) ?: return
+        startConsuming(topic, choice)
+    }
+
+    private fun startConsuming(topic: String, choice: StartChoice) {
+        val bootstrap = currentBootstrap.trim()
         if (bootstrap.isEmpty()) return
 
         currentConsumer?.close()
@@ -315,23 +421,24 @@ class MainView {
         tableRows.clear()
         currentTopic = topic
         pageOffset = 0L
-        topicHeader.text = "Topic: $topic (from beginning)"
+        topicHeader.text = "Topic: $topic (${ConnectionMapping.positionLabel(choice)})"
         statsLabel.text = ""
         pageLabel.text = ""
         prevPageBtn.isDisable = true
         nextPageBtn.isDisable = true
+        exportButton.isDisable = false
 
         val consumer = KafkaMessageConsumer(
             bootstrapServers = bootstrap,
             topic = topic,
-            fromBeginning = true,
+            position = ConnectionMapping.toStartingPosition(choice),
             onMessage = { msg -> inboxQueue.offer(msg) },
             onError = { t ->
                 Platform.runLater {
                     topicHeader.text = "Topic: $topic — ERROR: ${t.message ?: t.javaClass.simpleName}"
                 }
             },
-            auth = connectionForm.authStrategy.value,
+            auth = currentAuth,
         )
         currentConsumer = consumer
         consumer.start()

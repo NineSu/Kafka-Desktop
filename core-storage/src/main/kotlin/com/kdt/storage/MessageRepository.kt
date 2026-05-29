@@ -161,6 +161,64 @@ class MessageRepository(
         }
     }
 
+    /**
+     * Streams every row matching the filter (no pagination), invoking [rowConsumer]
+     * once per row. Used for export of the full filtered result set without buffering
+     * it all in memory. Same ordering as [query].
+     */
+    @Synchronized
+    fun streamFiltered(
+        clusterId: String,
+        topic: String,
+        filter: FilterNode? = null,
+        rowConsumer: (MessageRow) -> Unit,
+    ) {
+        val compiled = compiler.compile(filter)
+        val where = buildString {
+            append("cluster_id = ? AND topic = ?")
+            if (!compiled.isEmpty()) {
+                append(" AND ")
+                append(compiled.whereClause)
+            }
+        }
+        val sql = """
+            SELECT partition, "offset", ts, key_str, value_str, value_json, headers
+            FROM messages
+            WHERE $where
+            ORDER BY ts, partition, "offset"
+        """.trimIndent()
+        connection.prepareStatement(sql).use { ps ->
+            var idx = 1
+            ps.setString(idx++, clusterId)
+            ps.setString(idx++, topic)
+            for (p in compiled.params) {
+                when (p) {
+                    is String -> ps.setString(idx++, p)
+                    is Double -> ps.setDouble(idx++, p)
+                    is Long -> ps.setLong(idx++, p)
+                    is Int -> ps.setInt(idx++, p)
+                    is Boolean -> ps.setBoolean(idx++, p)
+                    null -> ps.setNull(idx++, java.sql.Types.VARCHAR)
+                    else -> ps.setObject(idx++, p)
+                }
+            }
+            val rs = ps.executeQuery()
+            while (rs.next()) {
+                rowConsumer(
+                    MessageRow(
+                        partition = rs.getInt(1),
+                        offset = rs.getLong(2),
+                        timestampMs = rs.getTimestamp(3).time,
+                        key = rs.getString(4),
+                        valueStr = rs.getString(5),
+                        valueJson = rs.getString(6),
+                        headersJson = rs.getString(7),
+                    )
+                )
+            }
+        }
+    }
+
     @Synchronized
     fun count(clusterId: String, topic: String, filter: FilterNode? = null): Long {
         val compiled = compiler.compile(filter)

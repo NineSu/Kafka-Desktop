@@ -41,6 +41,26 @@ class AuthFormState {
     var kerberosPrincipal: String = ""
     var keytabPath: String = ""
 
+    /** Deep copy — used when editing in a dialog that can be cancelled. */
+    fun copy(): AuthFormState {
+        val src = this
+        return AuthFormState().apply {
+            protocol = src.protocol
+            saslMechanism = src.saslMechanism
+            username = src.username
+            password = src.password
+            truststorePath = src.truststorePath
+            truststorePassword = src.truststorePassword
+            keystorePath = src.keystorePath
+            keystorePassword = src.keystorePassword
+            keyPassword = src.keyPassword
+            verifyHostname = src.verifyHostname
+            kerberosService = src.kerberosService
+            kerberosPrincipal = src.kerberosPrincipal
+            keytabPath = src.keytabPath
+        }
+    }
+
     fun toAuthStrategy(): AuthStrategy {
         val ssl = SslConfig(
             truststorePath = truststorePath.ifBlank { null },

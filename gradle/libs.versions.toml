@@ -12,6 +12,8 @@ testcontainers = "1.20.1"
 mockk = "1.13.12"
 duckdb = "1.0.0"
 jackson = "2.17.2"
+javaKeyring = "1.0.4"
+commonsCsv = "1.11.0"
 
 [libraries]
 koin-core = { module = "io.insert-koin:koin-core", version.ref = "koin" }
@@ -25,6 +27,8 @@ testcontainers-junit = { module = "org.testcontainers:junit-jupiter", version.re
 mockk = { module = "io.mockk:mockk", version.ref = "mockk" }
 duckdb-jdbc = { module = "org.duckdb:duckdb_jdbc", version.ref = "duckdb" }
 jackson-module-kotlin = { module = "com.fasterxml.jackson.module:jackson-module-kotlin", version.ref = "jackson" }
+java-keyring = { module = "com.github.javakeyring:java-keyring", version.ref = "javaKeyring" }
+commons-csv = { module = "org.apache.commons:commons-csv", version.ref = "commonsCsv" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }

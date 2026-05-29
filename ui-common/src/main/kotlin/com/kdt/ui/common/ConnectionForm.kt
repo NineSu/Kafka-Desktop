@@ -1,76 +1,69 @@
 package com.kdt.ui.common
 
-import com.kdt.auth.AuthStrategy
-import com.kdt.auth.PlaintextAuth
 import javafx.beans.property.SimpleObjectProperty
-import javafx.beans.property.SimpleStringProperty
+import javafx.collections.FXCollections
+import javafx.collections.ObservableList
 import javafx.event.EventHandler
 import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.control.Button
+import javafx.scene.control.ComboBox
 import javafx.scene.control.Label
-import javafx.scene.control.TextField
 import javafx.scene.layout.HBox
 import javafx.scene.layout.Priority
 import javafx.scene.layout.VBox
 
 /**
- * Reusable connection form: text field for bootstrap.servers, "Auth..." button, Connect button, status label.
- * Holds both [bootstrapServers] and [authStrategy] as properties; UI consumers read them on connect.
+ * Connection bar: a dropdown of saved connections, a "Manage…" button that opens
+ * the [ConnectionManagerDialog], and a Connect button.
+ *
+ * The form holds no bootstrap text field anymore — every connection must be saved
+ * first (see iter-7 design). The app populates [connections] from the ConnectionStore
+ * and reacts to [onConnect] / [onManage].
  */
 class ConnectionForm : VBox() {
 
-    private val bootstrapField = TextField("localhost:9092").apply {
-        promptText = "host1:9092,host2:9092"
+    val connections: ObservableList<ConnectionVM> = FXCollections.observableArrayList()
+    val selected = SimpleObjectProperty<ConnectionVM?>(null)
+
+    private val connectionBox = ComboBox<ConnectionVM>(connections).apply {
+        promptText = "Select a connection…"
         HBox.setHgrow(this, Priority.ALWAYS)
+        maxWidth = Double.MAX_VALUE
     }
-
-    private val authButton = Button("Auth: PLAINTEXT").apply {
-        style = "-fx-base: #ecf0f1;"
-    }
-
-    private val connectButton = Button("Connect")
-
-    private val statusLabel = Label("").apply {
-        styleClass.add("status-label")
-    }
-
-    val bootstrapServers = SimpleStringProperty("localhost:9092")
-    val authStrategy: SimpleObjectProperty<AuthStrategy> = SimpleObjectProperty(PlaintextAuth)
-    private val authState = AuthFormState()
+    private val manageButton = Button("Manage…")
+    private val connectButton = Button("Connect").apply { isDisable = true }
+    private val statusLabel = Label("").apply { styleClass.add("status-label") }
 
     var onConnect: () -> Unit = {}
+    var onManage: () -> Unit = {}
 
     init {
         spacing = 8.0
         padding = Insets(12.0)
 
-        bootstrapField.textProperty().bindBidirectional(bootstrapServers)
+        connectionBox.valueProperty().addListener { _, _, v ->
+            selected.value = v
+            connectButton.isDisable = v == null
+        }
         connectButton.onAction = EventHandler { onConnect() }
-        authButton.onAction = EventHandler { openAuthDialog() }
+        manageButton.onAction = EventHandler { onManage() }
 
-        val row = HBox(8.0, Label("Bootstrap servers:"), bootstrapField, authButton, connectButton).apply {
+        val row = HBox(8.0, Label("Connection:"), connectionBox, manageButton, connectButton).apply {
             alignment = Pos.CENTER_LEFT
         }
         children.addAll(row, statusLabel)
     }
 
-    private fun openAuthDialog() {
-        val dialog = AuthDialog(authState)
-        val result = dialog.showAndWait()
-        if (result.isPresent) {
-            authStrategy.value = result.get()
-            authButton.text = "Auth: ${labelFor(authState)}"
-        }
+    /** Replace the dropdown contents, preserving the selection by id when possible. */
+    fun setConnections(items: List<ConnectionVM>, selectId: String? = null) {
+        val keepId = selectId ?: selected.value?.id
+        connections.setAll(items)
+        val toSelect = items.firstOrNull { it.id == keepId } ?: items.firstOrNull()
+        connectionBox.value = toSelect
     }
 
-    private fun labelFor(state: AuthFormState): String {
-        val p = state.protocol.name
-        return when (state.protocol) {
-            SecurityProtocol.SASL_PLAINTEXT, SecurityProtocol.SASL_SSL -> "$p / ${state.saslMechanism.name}"
-            else -> p
-        }
-    }
+    fun selectedConnection(): ConnectionVM? = connectionBox.value
 
     fun setStatus(text: String, error: Boolean = false) {
         statusLabel.text = text
@@ -78,8 +71,8 @@ class ConnectionForm : VBox() {
     }
 
     fun setBusy(busy: Boolean) {
-        connectButton.isDisable = busy
-        bootstrapField.isDisable = busy
-        authButton.isDisable = busy
+        connectButton.isDisable = busy || connectionBox.value == null
+        connectionBox.isDisable = busy
+        manageButton.isDisable = busy
     }
 }

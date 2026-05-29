@@ -4,6 +4,7 @@ import com.kdt.auth.AuthStrategy
 import com.kdt.auth.PlaintextAuth
 import org.apache.kafka.clients.consumer.ConsumerConfig
 import org.apache.kafka.clients.consumer.KafkaConsumer
+import org.apache.kafka.common.TopicPartition
 import org.apache.kafka.common.serialization.ByteArrayDeserializer
 import org.slf4j.LoggerFactory
 import java.time.Duration
@@ -27,14 +28,16 @@ data class ConsumedMessage(
  * Polls a single topic on a dedicated thread and pushes each message to [onMessage].
  * Closing the consumer stops the thread and releases broker resources.
  *
- * Backpressure note: this iteration delivers every message synchronously to [onMessage].
- * Downstream (UI) must absorb at the polling rate. Iteration 3 will introduce a bounded
- * queue + DuckDB sink to decouple consumption from rendering.
+ * Uses manual partition assignment + seek (not subscribe) so the [position] can be
+ * honored precisely — earliest/latest/last-N-per-partition/by-timestamp/by-offset.
+ *
+ * Backpressure note: this delivers every message synchronously to [onMessage]; the
+ * downstream UI batches via a bounded queue + DuckDB sink.
  */
 class KafkaMessageConsumer(
     bootstrapServers: String,
     private val topic: String,
-    private val fromBeginning: Boolean = true,
+    private val position: StartingPosition = StartingPosition.Beginning,
     private val onMessage: (ConsumedMessage) -> Unit,
     private val onError: (Throwable) -> Unit = {},
     auth: AuthStrategy = PlaintextAuth,
@@ -47,7 +50,6 @@ class KafkaMessageConsumer(
         Properties().apply {
             put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers)
             put(ConsumerConfig.GROUP_ID_CONFIG, "kafka-desktop-${UUID.randomUUID()}")
-            put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, if (fromBeginning) "earliest" else "latest")
             put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false)
             put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer::class.java.name)
             put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, ByteArrayDeserializer::class.java.name)
@@ -61,12 +63,12 @@ class KafkaMessageConsumer(
     }
 
     fun start() {
-        consumer.subscribe(listOf(topic))
         thread.start()
     }
 
     private fun runLoop() {
         try {
+            assignAndSeek()
             while (running.get()) {
                 val batch = consumer.poll(Duration.ofMillis(500))
                 for (record in batch) {
@@ -93,6 +95,43 @@ class KafkaMessageConsumer(
                 consumer.close(Duration.ofSeconds(5))
             } catch (e: Exception) {
                 log.warn("Error closing consumer", e)
+            }
+        }
+    }
+
+    /** Discover the topic's partitions, assign them all, and seek per [position]. */
+    private fun assignAndSeek() {
+        val partitions = consumer.partitionsFor(topic).map { TopicPartition(topic, it.partition()) }
+        consumer.assign(partitions)
+        seekTo(partitions, position)
+    }
+
+    private fun seekTo(partitions: List<TopicPartition>, position: StartingPosition) {
+        when (position) {
+            StartingPosition.Beginning -> consumer.seekToBeginning(partitions)
+            StartingPosition.End -> consumer.seekToEnd(partitions)
+            is StartingPosition.LastN -> {
+                val begin = consumer.beginningOffsets(partitions)
+                val end = consumer.endOffsets(partitions)
+                for (tp in partitions) {
+                    val lo = begin[tp] ?: 0L
+                    val hi = end[tp] ?: lo
+                    consumer.seek(tp, maxOf(lo, hi - position.n))
+                }
+            }
+            is StartingPosition.FromTimestamp -> {
+                val query = partitions.associateWith { position.epochMs }
+                val found = consumer.offsetsForTimes(query)
+                val noMatch = mutableListOf<TopicPartition>()
+                for (tp in partitions) {
+                    val ot = found[tp]
+                    if (ot != null) consumer.seek(tp, ot.offset()) else noMatch.add(tp)
+                }
+                // Partitions with no record at/after the timestamp: position at the end (tail).
+                if (noMatch.isNotEmpty()) consumer.seekToEnd(noMatch)
+            }
+            is StartingPosition.FromOffset -> {
+                for (tp in partitions) consumer.seek(tp, position.offset)
             }
         }
     }
