@@ -91,6 +91,8 @@ class KafkaMessageConsumer(
                 onError(t)
             }
         } finally {
+            // Clear any interrupt flag set by close() so the consumer can shut down cleanly.
+            Thread.interrupted()
             try {
                 consumer.close(Duration.ofSeconds(5))
             } catch (e: Exception) {
@@ -139,6 +141,9 @@ class KafkaMessageConsumer(
     override fun close() {
         running.set(false)
         consumer.wakeup()
+        // The delivery thread may be blocked in onMessage (e.g. a bounded-queue put());
+        // wakeup() only unblocks poll(), so interrupt to break out of a blocking sink too.
+        thread.interrupt()
         thread.join(3_000)
     }
 }

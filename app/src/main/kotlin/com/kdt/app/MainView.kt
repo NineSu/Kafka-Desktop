@@ -49,7 +49,8 @@ import org.slf4j.LoggerFactory
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 
 class MainView {
 
@@ -87,7 +88,7 @@ class MainView {
     private var connection: KafkaConnection? = null
     private var currentConsumer: KafkaMessageConsumer? = null
     private var currentProducer: KafkaMessageProducer? = null
-    private var currentTopic: String? = null
+    @Volatile private var currentTopic: String? = null
     private var currentFilter: FilterNode? = null
     // Bootstrap + auth of the currently-connected cluster; reused by consumer & producer.
     private var currentBootstrap: String = ""
@@ -95,22 +96,29 @@ class MainView {
     @Volatile private var refreshing: Boolean = false
     private var allTopics: List<String> = emptyList()
 
-    // Producer thread fills this queue; UI-side timer batches it into DuckDB.
-    private val inboxQueue = ConcurrentLinkedQueue<ConsumedMessage>()
+    // Consumer thread fills this bounded queue; a dedicated writer thread drains it into
+    // DuckDB. The bound provides backpressure (a full queue blocks the consumer's put),
+    // and keeping DuckDB writes off the JavaFX thread avoids UI jank under high throughput.
+    private val inboxQueue = LinkedBlockingQueue<ConsumedMessage>(QUEUE_CAPACITY)
+    @Volatile private var writerRunning = false
+    private var writerThread: Thread? = null
+
     private val refreshTimer = object : AnimationTimer() {
-        private var lastDrainMs = 0L
         private var lastQueryMs = 0L
         override fun handle(now: Long) {
             val nowMs = now / 1_000_000
-            if (nowMs - lastDrainMs >= 250) {
-                drainInboxIntoRepo()
-                lastDrainMs = nowMs
-            }
             if (nowMs - lastQueryMs >= 500) {
                 refreshTable()
                 lastQueryMs = nowMs
             }
         }
+    }
+
+    private companion object {
+        const val QUEUE_CAPACITY = 10_000
+        const val ROW_CAP = 500_000
+        const val EVICT_CHECK_INTERVAL = 10_000
+        const val WRITE_BATCH = 1_000
     }
 
     fun show(stage: Stage) {
@@ -154,6 +162,7 @@ class MainView {
         stage.setOnCloseRequest { tearDown() }
         stage.show()
 
+        startWriter()
         refreshTimer.start()
     }
 
@@ -648,7 +657,7 @@ class MainView {
             bootstrapServers = bootstrap,
             topic = topic,
             position = ConnectionMapping.toStartingPosition(choice),
-            onMessage = { msg -> inboxQueue.offer(msg) },
+            onMessage = { msg -> inboxQueue.put(msg) }, // blocks when full → backpressure
             onError = { t ->
                 Platform.runLater {
                     topicHeader.text = "Topic: $topic — ERROR: ${t.message ?: t.javaClass.simpleName}"
@@ -660,20 +669,43 @@ class MainView {
         consumer.start()
     }
 
-    private fun drainInboxIntoRepo() {
-        val topic = currentTopic ?: return
-        if (inboxQueue.isEmpty()) return
-        val batch = ArrayList<ConsumedMessage>(inboxQueue.size.coerceAtMost(1_000))
-        var drained = 0
-        while (drained < 1_000) {
-            val m = inboxQueue.poll() ?: break
-            batch.add(m); drained++
-        }
-        if (batch.isNotEmpty()) {
+    /** Background thread: drains the inbox queue into DuckDB and enforces the row cap. */
+    private fun startWriter() {
+        writerRunning = true
+        val t = Thread({ writerLoop() }, "duckdb-writer").apply { isDaemon = true }
+        writerThread = t
+        t.start()
+    }
+
+    private fun stopWriter() {
+        writerRunning = false
+        writerThread?.interrupt()
+    }
+
+    private fun writerLoop() {
+        var insertedSinceCheck = 0
+        val batch = ArrayList<ConsumedMessage>(WRITE_BATCH)
+        while (writerRunning) {
             try {
+                // Block for the first item, then drain a batch without waiting.
+                val first = inboxQueue.poll(500, TimeUnit.MILLISECONDS) ?: continue
+                batch.clear()
+                batch.add(first)
+                inboxQueue.drainTo(batch, WRITE_BATCH - 1)
+
+                val topic = currentTopic ?: continue
                 repo.insertBatch(clusterId, topic, batch)
+
+                insertedSinceCheck += batch.size
+                if (insertedSinceCheck >= EVICT_CHECK_INTERVAL) {
+                    insertedSinceCheck = 0
+                    val deleted = repo.evictOldest(clusterId, topic, ROW_CAP)
+                    if (deleted > 0) log.debug("LRU evicted {} rows from {}", deleted, topic)
+                }
+            } catch (_: InterruptedException) {
+                break // stop signal
             } catch (e: Exception) {
-                log.warn("insertBatch failed", e)
+                log.warn("writer batch failed", e)
             }
         }
     }
@@ -732,6 +764,7 @@ class MainView {
 
     private fun tearDown() {
         refreshTimer.stop()
+        stopWriter()
         try { currentConsumer?.close() } catch (_: Exception) {}
         try { currentProducer?.close() } catch (_: Exception) {}
         try { connection?.close() } catch (_: Exception) {}

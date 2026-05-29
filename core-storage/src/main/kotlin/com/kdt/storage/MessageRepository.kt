@@ -259,6 +259,32 @@ class MessageRepository(
         }
     }
 
+    /**
+     * LRU eviction: keep only the newest [keepNewest] rows for (clusterId, topic),
+     * deleting the oldest by (ts, partition, offset). Returns the number of rows deleted.
+     * No-op when the current count is within the cap.
+     */
+    @Synchronized
+    fun evictOldest(clusterId: String, topic: String, keepNewest: Int): Int {
+        val total = count(clusterId, topic, null)
+        val excess = total - keepNewest
+        if (excess <= 0) return 0
+        val sql = """
+            DELETE FROM messages WHERE rowid IN (
+                SELECT rowid FROM messages
+                WHERE cluster_id = ? AND topic = ?
+                ORDER BY ts, partition, "offset"
+                LIMIT ?
+            )
+        """.trimIndent()
+        return connection.prepareStatement(sql).use { ps ->
+            ps.setString(1, clusterId)
+            ps.setString(2, topic)
+            ps.setLong(3, excess)
+            ps.executeUpdate()
+        }
+    }
+
     @Synchronized
     fun findOne(clusterId: String, topic: String, partition: Int, offset: Long): MessageRow? {
         val sql = """
