@@ -10,10 +10,13 @@ import com.kdt.filter.SqlCompiler
 import com.kdt.filter.Value
 import javafx.beans.property.SimpleObjectProperty
 import javafx.beans.property.SimpleStringProperty
+import javafx.collections.FXCollections
+import javafx.collections.ObservableList
 import javafx.geometry.Insets
 import javafx.geometry.Pos
 import javafx.scene.control.Button
 import javafx.scene.control.ChoiceBox
+import javafx.scene.control.ComboBox
 import javafx.scene.control.Label
 import javafx.scene.control.TextArea
 import javafx.scene.control.TextField
@@ -21,6 +24,19 @@ import javafx.scene.control.TitledPane
 import javafx.scene.layout.HBox
 import javafx.scene.layout.Priority
 import javafx.scene.layout.VBox
+
+/**
+ * UI-local snapshot of the flat builder's form: the combine-logic plus one entry per rule.
+ * The app maps this to/from core-storage's SavedFilter (keeps ui-common free of core-storage).
+ */
+data class FilterSnapshot(val logic: String, val rows: List<FilterRowData>)
+
+data class FilterRowData(
+    val fieldKind: String,
+    val aux: String,
+    val operator: String,
+    val value: String,
+)
 
 /**
  * Visual AND/OR filter builder. Produces a [FilterNode] AST via [currentFilter].
@@ -41,6 +57,13 @@ class FilterBuilder : TitledPane() {
     }
 
     var onApply: (FilterNode?) -> Unit = {}
+
+    /** Names of saved filters visible for the current topic; the app populates this. */
+    val savedFilters: ObservableList<String> = FXCollections.observableArrayList()
+    var onSaveRequested: () -> Unit = {}
+    var onLoadFilter: (String) -> Unit = {}
+    var onDeleteFilter: (String) -> Unit = {}
+    private val savedBox = ComboBox(savedFilters).apply { promptText = "saved filters…" }
 
     init {
         text = "Filter"
@@ -64,7 +87,15 @@ class FilterBuilder : TitledPane() {
         }
         logicBox.valueProperty().addListener { _, _, _ -> rebuildPreview() }
 
-        val container = VBox(4.0, header, rulesBox, Label("SQL preview:"), sqlPreview).apply {
+        val saveBtn = Button("Save…").apply { setOnAction { onSaveRequested() } }
+        val loadBtn = Button("Load").apply { setOnAction { savedBox.value?.let { onLoadFilter(it) } } }
+        val deleteBtn = Button("Delete").apply { setOnAction { savedBox.value?.let { onDeleteFilter(it) } } }
+        val savedRow = HBox(8.0, Label("Saved:"), savedBox, loadBtn, saveBtn, deleteBtn).apply {
+            alignment = Pos.CENTER_LEFT
+            padding = Insets(0.0, 8.0, 0.0, 8.0)
+        }
+
+        val container = VBox(4.0, savedRow, header, rulesBox, Label("SQL preview:"), sqlPreview).apply {
             padding = Insets(8.0)
         }
         content = container
@@ -85,13 +116,27 @@ class FilterBuilder : TitledPane() {
         addRule()
     }
 
-    private fun addRule() {
+    private fun addRule(initial: FilterRowData? = null) {
         val row = RuleRow(onRemove = { row ->
             rulesBox.children.remove(row)
             rebuildPreview()
-        }, onChange = ::rebuildPreview)
+        }, onChange = ::rebuildPreview, initial = initial)
         rulesBox.children.add(row)
         rebuildPreview()
+    }
+
+    /** Capture the current form as a [FilterSnapshot] (for saving). */
+    fun snapshot(): FilterSnapshot = FilterSnapshot(
+        logic = logicBox.value.name,
+        rows = rulesBox.children.filterIsInstance<RuleRow>().map { it.toData() },
+    )
+
+    /** Repopulate the form from a saved [FilterSnapshot] and apply it immediately. */
+    fun restore(snapshot: FilterSnapshot) {
+        rulesBox.children.clear()
+        logicBox.value = runCatching { Logic.valueOf(snapshot.logic) }.getOrDefault(Logic.AND)
+        if (snapshot.rows.isEmpty()) addRule() else snapshot.rows.forEach { addRule(it) }
+        onApply(buildFilter())
     }
 
     private fun buildFilter(): FilterNode? {
@@ -118,23 +163,24 @@ class FilterBuilder : TitledPane() {
 private class RuleRow(
     private val onRemove: (RuleRow) -> Unit,
     private val onChange: () -> Unit,
+    initial: FilterRowData? = null,
 ) : HBox(6.0) {
 
     enum class FieldKind { KEY, VALUE_RAW, JSON_PATH, HEADER, PARTITION, OFFSET, TIMESTAMP }
 
     private val fieldKind = ChoiceBox<FieldKind>().apply {
         items.addAll(*FieldKind.values())
-        value = FieldKind.KEY
+        value = initial?.fieldKind?.let { runCatching { FieldKind.valueOf(it) }.getOrNull() } ?: FieldKind.KEY
     }
     private val operator = ChoiceBox<Operator>().apply {
         items.addAll(*Operator.values())
-        value = Operator.LIKE
+        value = initial?.operator?.let { runCatching { Operator.valueOf(it) }.getOrNull() } ?: Operator.LIKE
     }
-    private val auxField = TextField().apply {
+    private val auxField = TextField(initial?.aux.orEmpty()).apply {
         promptText = "path or header name"
         prefWidth = 130.0
     }
-    private val valueField = TextField().apply {
+    private val valueField = TextField(initial?.value.orEmpty()).apply {
         promptText = "value"
         HBox.setHgrow(this, Priority.ALWAYS)
     }
@@ -150,6 +196,13 @@ private class RuleRow(
         valueField.textProperty().addListener { _, _, _ -> onChange() }
         syncAuxVisibility()
     }
+
+    fun toData(): FilterRowData = FilterRowData(
+        fieldKind = fieldKind.value.name,
+        aux = auxField.text.orEmpty(),
+        operator = operator.value.name,
+        value = valueField.text.orEmpty(),
+    )
 
     private fun syncAuxVisibility() {
         val showsAux = fieldKind.value == FieldKind.JSON_PATH || fieldKind.value == FieldKind.HEADER

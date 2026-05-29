@@ -10,15 +10,20 @@ import com.kdt.kafka.KafkaMessageProducer
 import com.kdt.kafka.SendResult
 import com.kdt.kafka.StartingPosition
 import com.kdt.storage.ConnectionStore
+import com.kdt.storage.FilterStore
 import com.kdt.storage.MessageExporter
 import com.kdt.storage.MessageImporter
 import com.kdt.storage.MessageRepository
 import com.kdt.storage.MessageRow
+import com.kdt.storage.SavedCondition
+import com.kdt.storage.SavedFilter
 import com.kdt.ui.common.ConnectionForm
 import com.kdt.ui.common.ConnectionManagerDialog
 import com.kdt.ui.common.ConnectionVM
 import com.kdt.ui.common.ExportDialog
 import com.kdt.ui.common.FilterBuilder
+import com.kdt.ui.common.FilterRowData
+import com.kdt.ui.common.FilterSnapshot
 import com.kdt.ui.common.MessageDetailPane
 import com.kdt.ui.common.ProducerDialog
 import com.kdt.ui.common.ProducerRequest
@@ -60,6 +65,7 @@ class MainView {
 
     private val repo = MessageRepository()
     private val connectionStore = ConnectionStore()
+    private val filterStore = FilterStore()
     private val connectionForm = ConnectionForm()
     private val filterBuilder = FilterBuilder().apply {
         onApply = { node ->
@@ -129,6 +135,7 @@ class MainView {
         wireSendButton()
         wireExportButton()
         wireImportButton()
+        wireFilterSave()
         wirePagination()
         wireTopicAdmin()
         loadConnections()
@@ -250,6 +257,53 @@ class MainView {
     private fun wireImportButton() {
         importButton.setOnAction { openImportDialog() }
     }
+
+    // ---- Saved filters (iter-11) ----
+
+    private fun wireFilterSave() {
+        filterBuilder.onSaveRequested = { onSaveFilter() }
+        filterBuilder.onLoadFilter = { name -> onLoadFilter(name) }
+        filterBuilder.onDeleteFilter = { name ->
+            filterStore.delete(name)
+            refreshSavedFilters()
+        }
+        refreshSavedFilters()
+    }
+
+    /** Repopulate the builder's saved-filter dropdown with globals + the current topic's. */
+    private fun refreshSavedFilters() {
+        val names = filterStore.listFor(currentTopic).map { it.name }
+        filterBuilder.savedFilters.setAll(names)
+    }
+
+    private fun onSaveFilter() {
+        val snapshot = filterBuilder.snapshot()
+        val req = SaveFilterDialog(currentTopic).showAndWait().orElse(null) ?: return
+        filterStore.save(
+            SavedFilter(
+                name = req.name,
+                topic = req.topic,
+                logic = snapshot.logic,
+                conditions = snapshot.rows.map { it.toSavedCondition() },
+            )
+        )
+        refreshSavedFilters()
+        actionLabel.text = "✓ saved filter \"${req.name}\""
+        actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #16a085; -fx-font-weight: bold;"
+    }
+
+    private fun onLoadFilter(name: String) {
+        val filter = filterStore.list().firstOrNull { it.name == name } ?: return
+        filterBuilder.restore(
+            FilterSnapshot(filter.logic, filter.conditions.map { it.toRowData() })
+        )
+    }
+
+    private fun FilterRowData.toSavedCondition() =
+        SavedCondition(fieldKind = fieldKind, aux = aux, operator = operator, value = value)
+
+    private fun SavedCondition.toRowData() =
+        FilterRowData(fieldKind = fieldKind, aux = aux, operator = operator, value = value)
 
     private fun openImportDialog() {
         if (currentBootstrap.isBlank()) return
@@ -645,6 +699,7 @@ class MainView {
         currentTopic = topic
         currentFilter = null
         filterBuilder.reset()
+        refreshSavedFilters()
         pageOffset = 0L
         topicHeader.text = "Topic: $topic (${ConnectionMapping.positionLabel(choice)})"
         statsLabel.text = ""
