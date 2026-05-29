@@ -74,6 +74,17 @@ class FilterBuilder : TitledPane() {
 
     val currentFilter: FilterNode? get() = buildFilter()
 
+    /**
+     * Reset the builder to a single empty rule (no active filter). Does NOT fire
+     * [onApply] — the caller is responsible for clearing any cached filter state.
+     * Used when switching topics so a fresh view starts unfiltered.
+     */
+    fun reset() {
+        rulesBox.children.clear()
+        logicBox.value = Logic.AND
+        addRule()
+    }
+
     private fun addRule() {
         val row = RuleRow(onRemove = { row ->
             rulesBox.children.remove(row)

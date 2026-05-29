@@ -39,7 +39,11 @@ class StartFromPicker(topic: String) : Dialog<StartChoice>() {
     private val timestampRadio = RadioButton("From timestamp:").apply { toggleGroup = group }
     private val offsetRadio = RadioButton("From offset:").apply { toggleGroup = group }
 
-    private val lastNSpinner = Spinner<Int>(1, 1_000_000, 1000, 100)
+    private val lastNSpinner = Spinner<Int>(1, 1_000_000, 1000, 100).apply {
+        isEditable = true
+        // Commit the typed text on focus loss (Spinner doesn't by default).
+        focusedProperty().addListener { _, _, focused -> if (!focused) commitSpinner(this) }
+    }
     private val datePicker = DatePicker(LocalDate.now(ZoneId.systemDefault()))
     private val timeField = TextField(LocalTime.now(ZoneId.systemDefault()).withSecond(0).withNano(0).toString())
         .apply { promptText = "HH:mm" }
@@ -68,10 +72,18 @@ class StartFromPicker(topic: String) : Dialog<StartChoice>() {
 
     private fun resolve(): StartChoice = when (group.selectedToggle) {
         endRadio -> StartChoice.End
-        lastNRadio -> StartChoice.LastN(lastNSpinner.value.toLong())
+        lastNRadio -> { commitSpinner(lastNSpinner); StartChoice.LastN(lastNSpinner.value.toLong()) }
         timestampRadio -> StartChoice.FromTimestamp(epochMs())
         offsetRadio -> StartChoice.FromOffset(offsetField.text.trim().toLongOrNull() ?: 0L)
         else -> StartChoice.Beginning
+    }
+
+    /** Push the spinner's edited text into its value (editable spinners don't auto-commit). */
+    private fun commitSpinner(spinner: Spinner<Int>) {
+        val text = spinner.editor.text
+        val parsed = text.trim().toIntOrNull() ?: return
+        val clamped = parsed.coerceIn(1, 1_000_000)
+        spinner.valueFactory.value = clamped
     }
 
     private fun epochMs(): Long {

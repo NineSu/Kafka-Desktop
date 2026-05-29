@@ -342,6 +342,9 @@ class MainView {
             onTest = { vm, report -> testConnection(vm, report) },
             onLoadSecrets = { vm -> ConnectionMapping.loadSecretsInto(vm, connectionStore) },
         ).showAndWait()
+        // Refresh the dropdown from the store so adds/edits/deletes are reflected
+        // (sidesteps ComboBox not always re-rendering live ObservableList mutations).
+        loadConnections()
     }
 
     /** Background connectivity probe for the connection manager's "Test" button. */
@@ -420,6 +423,8 @@ class MainView {
         inboxQueue.clear()
         tableRows.clear()
         currentTopic = topic
+        currentFilter = null
+        filterBuilder.reset()
         pageOffset = 0L
         topicHeader.text = "Topic: $topic (${ConnectionMapping.positionLabel(choice)})"
         statsLabel.text = ""
