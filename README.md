@@ -64,6 +64,9 @@ Kotlin 1.9 · JDK 17 · Gradle 8.10（Kotlin DSL）· JavaFX 21 · Koin · kafka
   `xattr -dr com.apple.quarantine "/Applications/Kafka Desktop.app"`。
   （正式签名 / 公证需 Apple 开发者账号，内部工具一般不做。）
 
-## 设计文档
+## 设计文档与工作流
 
-每个迭代的设计 spec 见 `docs/superpowers/specs/`；进度见 git tag `iter-1` … `iter-12`。
+- **设计 spec**：每个迭代一份，见 `docs/superpowers/specs/`。
+- **迭代历史**：看 commit message（`git log --grep "iter-"`）——无需 tag 即可追溯每个迭代的改动。
+- **发布**：仅发布打 `v*` tag（如 `v1.0.0`），触发 CI 出三平台安装包到 GitHub Releases。
+- **开发工作流**：每个迭代在 feature 分支开发 → 合并回 `main`；**只有发布才打 tag**（不为开发里程碑打 tag）。
