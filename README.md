@@ -2,6 +2,18 @@
 
 一个自研的 JavaFX 桌面 Kafka 工具，用来替代 IDEA BigDataTool 自带 Kafka 插件的两个痛点：**不支持多条件过滤**、**数据量大时卡死**。
 
+## 下载
+
+各平台自包含安装包见 [Releases](https://github.com/NineSu/Kafka-Desktop/releases)（无需自己装 Java）：
+
+| 平台 | 文件 |
+|---|---|
+| macOS | `Kafka.Desktop-*.dmg` |
+| Windows | `Kafka.Desktop-*.msi` |
+| Linux | `kafka-desktop_*_amd64.deb` |
+
+macOS 首次打开若被 Gatekeeper 拦（"身份不明的开发者"）：**右键 →「打开」** 确认一次即可。
+
 ## 功能
 
 **消费 / 浏览**
@@ -45,8 +57,9 @@ Kotlin 1.9 · JDK 17 · Gradle 8.10（Kotlin DSL）· JavaFX 21 · Koin · kafka
 打出的 `.dmg` **自带 JDK 运行时**——同事拿到后双击装、直接用，无需安装 Java / Gradle。
 
 注意：
-- **只能在对应系统上打对应包**：`jpackage` 在 macOS 上产出 `.dmg`，在 Windows 上产出 `.msi`，在 Linux 上产出 `.deb`。跨平台安装包通过 CI（各 OS 各跑一次）产出。
-- **macOS 版本号**：必须以非零整数开头（CFBundleVersion 规则），故当前用 `1.0.0`（见 `app/build.gradle.kts` 的 `appVersion`）。
+- **只能在对应系统上打对应包**：`jpackage` 在 macOS 上产出 `.dmg`，在 Windows 上产出 `.msi`，在 Linux 上产出 `.deb`。
+- **多平台一键发版**：推一个 `v*` tag（如 `v1.0.0`）即触发 `.github/workflows/release.yml`，在 macOS/Windows/Linux 三个 runner 上各打一个安装包并发布到 GitHub Release。macOS 版本号须以非零整数开头，故 tag 用 `v1.0.0` 这类（不要 `v0.x`）。
+- **macOS 版本号**：必须以非零整数开头（CFBundleVersion 规则），故当前用 `1.0.0`（见 `app/build.gradle.kts` 的 `appVersion`，CI 用 `-PappVersion` 传入 tag 版本）。
 - **未签名 / 未公证**：把 `.dmg` 传给同事后，对方首次打开会被 Gatekeeper 拦（"身份不明的开发者"）。解决：**右键 →「打开」** 确认一次，或终端执行
   `xattr -dr com.apple.quarantine "/Applications/Kafka Desktop.app"`。
   （正式签名 / 公证需 Apple 开发者账号，内部工具一般不做。）
