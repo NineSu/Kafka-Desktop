@@ -1,0 +1,213 @@
+/* ============================================================
+   Kafka Desktop — Islands theme (Light + Dark)  [iter-14]
+   Colors are JavaFX looked-up colors defined per theme class
+   on the root. The accent is overridden at runtime via an
+   inline "-accent:" style set by ThemeManager.
+   ============================================================ */
+
+/* ---- Root defaults (accent overridden inline at runtime) ---- */
+.root {
+    -accent: #3574F0;
+    -fx-font-family: "Inter", "SF Pro Text", "Segoe UI", "System";
+    -fx-font-size: 13px;
+    -fx-focus-color: -accent;
+    -fx-faint-focus-color: transparent;
+}
+
+/* ---- Light palette ---- */
+.theme-light {
+    -sea: #EDEEF2;
+    -island: #FFFFFF;
+    -island-border: #E2E4EA;
+    -line: #ECEEF2;
+    -text: #272930;
+    -text-muted: #7A7E87;
+    -text-faint: #A0A4AD;
+    -control-bg: #F6F7F9;
+    -control-border: #CDD1DA;
+    -chip: #EEF0F4;
+    -selection-bg: derive(-accent, 80%);
+    -selection-text: derive(-accent, -20%);
+    -status-ok: #1F9254;
+    -status-err: #D4374B;
+    -status-info: #3574F0;
+    -fx-background-color: -sea;
+}
+
+/* ---- Dark palette ---- */
+.theme-dark {
+    -sea: #1A1B1E;
+    -island: #2B2D30;
+    -island-border: #393B40;
+    -line: #34363A;
+    -text: #DFE1E5;
+    -text-muted: #9DA0A8;
+    -text-faint: #6F737A;
+    -control-bg: #363840;
+    -control-border: #4B4E55;
+    -chip: #3A3D42;
+    -selection-bg: derive(-accent, -50%);
+    -selection-text: derive(-accent, 55%);
+    -status-ok: #62B06A;
+    -status-err: #E16A77;
+    -status-info: #6BA5F7;
+    -fx-background-color: -sea;
+}
+
+/* ---- App shell ---- */
+.app-root { -fx-padding: 5; -fx-background-color: -sea; }
+
+.island {
+    -fx-background-color: -island;
+    -fx-background-radius: 11;
+    -fx-border-color: -island-border;
+    -fx-border-radius: 11;
+    -fx-border-width: 1;
+    -fx-effect: dropshadow(gaussian, rgba(20,24,40,0.06), 10, 0.0, 0, 2);
+}
+
+/* SplitPane: show the sea between islands as a thin gap */
+.island-split { -fx-background-color: -sea; -fx-padding: 0; }
+.island-split > .split-pane-divider {
+    -fx-background-color: -sea;
+    -fx-padding: 0 2.5 0 2.5;
+    -fx-border-width: 0;
+}
+
+/* ---- Text ---- */
+.label { -fx-text-fill: -text; }
+.text-field, .text-area { -fx-text-fill: -text; }
+.mono { -fx-font-family: "JetBrains Mono", "SF Mono", "Consolas", monospace; -fx-font-size: 12px; }
+.header-strong { -fx-padding: 6 12 6 12; -fx-font-weight: bold; -fx-text-fill: -text; }
+.muted-label  { -fx-padding: 6 8 6 8; -fx-text-fill: -text-muted; }
+
+/* status labels */
+.status-label { -fx-padding: 6 12 6 12; }
+.status-info  { -fx-text-fill: -status-info; }
+.status-ok    { -fx-text-fill: -status-ok; -fx-font-weight: bold; }
+.status-err   { -fx-text-fill: -status-err; -fx-font-weight: bold; }
+
+/* ---- Buttons ---- */
+.button {
+    -fx-background-radius: 7;
+    -fx-border-radius: 7;
+    -fx-background-color: -control-bg;
+    -fx-border-color: -control-border;
+    -fx-border-width: 1;
+    -fx-text-fill: -text;
+    -fx-padding: 5 13 5 13;
+    -fx-cursor: hand;
+}
+.button:hover { -fx-background-color: derive(-control-bg, -4%); }
+.button:armed { -fx-background-color: derive(-control-bg, -8%); }
+.primary-button {
+    -fx-background-color: -accent;
+    -fx-border-color: -accent;
+    -fx-text-fill: white;
+}
+.primary-button:hover { -fx-background-color: derive(-accent, -8%); -fx-border-color: derive(-accent, -8%); }
+.gear-button { -fx-padding: 5 9 5 9; -fx-font-size: 15px; }
+
+/* ---- Inputs ---- */
+.text-field, .text-area, .combo-box, .choice-box, .spinner, .color-picker {
+    -fx-background-radius: 7;
+    -fx-border-radius: 7;
+    -fx-background-color: -island;
+    -fx-border-color: -control-border;
+    -fx-border-width: 1;
+}
+.text-area .content { -fx-background-color: -island; }
+.text-field:focused, .text-area:focused, .combo-box:focused {
+    -fx-border-color: -accent;
+}
+.combo-box .list-cell { -fx-text-fill: -text; -fx-background-color: transparent; }
+.combo-box-popup .list-view { -fx-background-color: -island; -fx-border-color: -island-border; }
+
+/* ---- ListView (topic list) ---- */
+.list-view { -fx-background-color: transparent; -fx-border-width: 0; -fx-padding: 2; }
+.list-cell {
+    -fx-background-color: transparent;
+    -fx-text-fill: -text;
+    -fx-padding: 6 12 6 12;
+}
+.list-cell:filled:hover { -fx-background-color: -chip; }
+.list-cell:filled:selected {
+    -fx-background-color: -selection-bg;
+    -fx-text-fill: -selection-text;
+    -fx-font-weight: bold;
+}
+
+/* ---- TableView (message table) ---- */
+.table-view { -fx-background-color: transparent; -fx-border-width: 0; -fx-table-cell-border-color: transparent; }
+.table-view .column-header-background { -fx-background-color: derive(-island, -2%); -fx-background-radius: 0; }
+.table-view .column-header, .table-view .filler { -fx-background-color: transparent; -fx-border-color: transparent -line transparent transparent; }
+.table-view .column-header .label { -fx-text-fill: -text-faint; -fx-font-weight: bold; -fx-alignment: center-left; }
+.table-row-cell { -fx-background-color: -island; -fx-border-color: transparent transparent -line transparent; -fx-table-cell-border-color: transparent; }
+.table-row-cell:odd { -fx-background-color: derive(-island, -1.5%); }
+.table-row-cell:hover { -fx-background-color: -chip; }
+.table-row-cell:selected { -fx-background-color: -selection-bg; }
+.table-row-cell:selected .text { -fx-fill: -selection-text; }
+.table-cell { -fx-text-fill: -text; -fx-padding: 5 11 5 11; -fx-border-width: 0; }
+
+/* ---- TabPane (detail pane) ---- */
+.tab-pane .tab-header-background { -fx-background-color: transparent; }
+.tab-pane .tab { -fx-background-color: transparent; -fx-background-radius: 7 7 0 0; -fx-padding: 5 13 5 13; }
+.tab-pane .tab:selected { -fx-background-color: -selection-bg; }
+.tab-pane .tab .tab-label { -fx-text-fill: -text-muted; }
+.tab-pane .tab:selected .tab-label { -fx-text-fill: -selection-text; -fx-font-weight: bold; }
+.tab-pane > .tab-header-area > .headers-region > .tab:selected .focus-indicator { -fx-border-color: transparent; }
+
+/* ---- ScrollBar ---- */
+.scroll-bar { -fx-background-color: transparent; }
+.scroll-bar .thumb { -fx-background-color: -control-border; -fx-background-radius: 6; }
+.scroll-bar .thumb:hover { -fx-background-color: -text-faint; }
+.scroll-bar .track { -fx-background-color: transparent; }
+.scroll-bar .increment-button, .scroll-bar .decrement-button { -fx-background-color: transparent; -fx-padding: 0; }
+.scroll-pane { -fx-background-color: transparent; }
+.scroll-pane > .viewport { -fx-background-color: transparent; }
+
+/* ---- Menu bar / toolbar ---- */
+.app-topbar { -fx-background-color: -island; -fx-border-color: transparent transparent -island-border transparent; -fx-border-width: 1; }
+.topbar-row { -fx-padding: 6 11 6 11; }
+.app-logo {
+    -fx-background-color: -accent; -fx-text-fill: white; -fx-font-weight: bold;
+    -fx-background-radius: 6; -fx-min-width: 22; -fx-min-height: 22; -fx-alignment: center;
+}
+.app-name { -fx-font-weight: bold; -fx-text-fill: -text; -fx-padding: 0 8 0 4; }
+.menu-bar { -fx-background-color: transparent; -fx-padding: 0; }
+.menu-bar > .container > .menu-button { -fx-background-radius: 6; }
+.menu-bar > .container > .menu-button:hover, .menu-bar > .container > .menu-button:showing { -fx-background-color: -selection-bg; }
+.menu-bar .label { -fx-text-fill: -text; }
+.context-menu, .menu-bar .context-menu { -fx-background-color: -island; -fx-border-color: -island-border; -fx-border-radius: 9; -fx-background-radius: 9; -fx-effect: dropshadow(gaussian, rgba(20,24,40,0.18), 16, 0, 0, 4); }
+.menu-item:focused { -fx-background-color: -selection-bg; }
+.menu-item:focused .label { -fx-text-fill: -selection-text; }
+.accent-chip { -fx-border-color: -control-border; -fx-border-radius: 20; -fx-background-radius: 20; -fx-padding: 3 9 3 9; }
+.accent-chip .label { -fx-text-fill: -text-muted; -fx-font-size: 11px; }
+.chip { -fx-background-color: -chip; -fx-background-radius: 6; -fx-padding: 3 10 3 10; -fx-font-weight: bold; -fx-text-fill: -text; }
+
+/* ---- Dialogs ---- */
+.dialog-pane { -fx-background-color: -sea; }
+.dialog-pane > .content { -fx-background-color: -sea; }
+.dialog-pane .header-panel { -fx-background-color: -island; }
+.dialog-pane .header-panel .label { -fx-text-fill: -text; -fx-font-weight: bold; }
+.dialog-pane .button-bar .button { -fx-min-width: 72; }
+
+/* ---- ColorPicker (custom accent) ---- */
+.color-picker { -fx-color-label-visible: true; }
+
+/* ---- Settings dialog ---- */
+.settings-root { -fx-min-width: 660; -fx-min-height: 320; }
+.settings-nav { -fx-background-color: derive(-sea, 2%); -fx-border-color: transparent -line transparent transparent; -fx-border-width: 1; -fx-min-width: 188; -fx-padding: 8; }
+.settings-nav-group { -fx-font-weight: bold; -fx-text-fill: -text; -fx-padding: 7 9 7 9; }
+.settings-nav-item { -fx-text-fill: -text-muted; -fx-padding: 6 9 6 22; -fx-background-radius: 7; }
+.settings-nav-item-selected { -fx-background-color: -selection-bg; -fx-text-fill: -selection-text; -fx-font-weight: bold; }
+.settings-pane { -fx-padding: 16 18 16 18; }
+.section-label { -fx-font-size: 11px; -fx-text-fill: -text-faint; -fx-font-weight: bold; }
+.accent-swatch { -fx-min-width: 26; -fx-min-height: 26; -fx-background-radius: 8; -fx-cursor: hand; -fx-border-width: 0; }
+.accent-swatch-selected { -fx-border-color: -text; -fx-border-width: 2; -fx-border-radius: 8; }
+.preview-pane { -fx-background-color: derive(-island, -1%); -fx-border-color: -line; -fx-border-width: 1; -fx-background-radius: 9; -fx-border-radius: 9; -fx-padding: 12; }
+.link-label { -fx-text-fill: -accent; -fx-underline: true; }
+
+/* segmented toggle (Light/Dark) */
+.toggle-button { -fx-background-color: -control-bg; -fx-text-fill: -text; -fx-border-color: -control-border; -fx-border-width: 1; -fx-padding: 5 14 5 14; }
+.toggle-button:selected { -fx-background-color: -accent; -fx-text-fill: white; -fx-border-color: -accent; }
