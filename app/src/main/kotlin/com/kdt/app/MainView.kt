@@ -79,15 +79,15 @@ class MainView {
     private val messageTable = TableView<MessageRowFx>()
     private val tableRows = FXCollections.observableArrayList<MessageRowFx>()
     private val detailPane = MessageDetailPane()
-    private val topicHeader = Label("(no topic)").apply { style = "-fx-padding: 6 12 6 12; -fx-font-weight: bold;" }
-    private val statsLabel = Label("").apply { style = "-fx-padding: 6 12 6 12;" }
-    private val actionLabel = Label("").apply { style = "-fx-padding: 6 12 6 12; -fx-text-fill: #2c3e50;" }
+    private val topicHeader = Label("(no topic)").apply { styleClass.add("header-strong") }
+    private val statsLabel = Label("").apply { styleClass.add("muted-label") }
+    private val actionLabel = Label("").apply { styleClass.add("status-label") }
     private val sendButton = javafx.scene.control.Button("Send message…").apply { isDisable = true }
     private val importButton = javafx.scene.control.Button("Import…").apply { isDisable = true }
     private val exportButton = javafx.scene.control.Button("Export…").apply { isDisable = true }
     private val prevPageBtn = javafx.scene.control.Button("◀ Prev").apply { isDisable = true }
     private val nextPageBtn = javafx.scene.control.Button("Next ▶").apply { isDisable = true }
-    private val pageLabel = Label("").apply { style = "-fx-padding: 6 8 6 8;" }
+    private val pageLabel = Label("").apply { styleClass.add("muted-label") }
     private var pageOffset: Long = 0L
     private val pageSize: Int = 500
 
@@ -127,6 +127,16 @@ class MainView {
         const val WRITE_BATCH = 1_000
     }
 
+    private enum class Status(val cssClass: String) {
+        INFO("status-info"), OK("status-ok"), ERR("status-err")
+    }
+
+    /** Set the action label text + semantic status style class. */
+    private fun action(text: String, status: Status) {
+        actionLabel.text = text
+        actionLabel.styleClass.setAll("status-label", status.cssClass)
+    }
+
     fun show(stage: Stage) {
         buildMessageTable()
         wireConnectionForm()
@@ -143,29 +153,53 @@ class MainView {
         val topicToolbar = HBox(6.0, newTopicBtn, groupsBtn, refreshTopicsBtn).apply {
             padding = Insets(6.0, 6.0, 6.0, 6.0)
         }
-        val left = VBox(topicToolbar, topicList).apply { VBox.setVgrow(topicList, Priority.ALWAYS) }
+        val left = VBox(topicToolbar, topicList).apply {
+            VBox.setVgrow(topicList, Priority.ALWAYS)
+            styleClass.add("island")
+        }
         val headerRow = HBox(8.0, topicHeader, statsLabel, prevPageBtn, pageLabel, nextPageBtn, sendButton, importButton, exportButton, actionLabel)
         val tableArea = BorderPane().apply {
             top = headerRow
             center = messageTable
+            styleClass.add("island")
         }
+        detailPane.styleClass.add("island")
+        filterBuilder.styleClass.add("island")
         val rightSplit = SplitPane(tableArea, detailPane).apply {
             orientation = javafx.geometry.Orientation.VERTICAL
             setDividerPositions(0.55)
+            styleClass.add("island-split")
         }
         val right = BorderPane().apply {
             center = rightSplit
             bottom = filterBuilder
         }
-        val split = SplitPane(left, right).apply { setDividerPositions(0.20) }
+        val split = SplitPane(left, right).apply {
+            setDividerPositions(0.20)
+            styleClass.add("island-split")
+        }
 
+        val actions = AppActions(
+            onNewTopic = { onCreateTopic() },
+            onImport = { openImportDialog() },
+            onExport = { openExportDialog() },
+            onRefreshTopics = { refreshTopicList() },
+            onManageConnections = { openConnectionManager() },
+            onConsumerGroups = { openConsumerGroups() },
+            onSendMessage = { openProducerDialog(null) },
+            onOpenSettings = { com.kdt.ui.common.SettingsDialog().showAndWait() },
+        )
+        connectionForm.styleClass.add("island")
         val root = BorderPane().apply {
-            top = connectionForm
+            top = VBox(AppTopBar(actions), connectionForm)
             center = split
+            styleClass.add("app-root")
         }
 
         stage.title = "Kafka Desktop"
-        stage.scene = Scene(root, 1300.0, 850.0)
+        val scene = Scene(root, 1300.0, 850.0)
+        com.kdt.ui.common.theme.ThemeManager.register(scene)
+        stage.scene = scene
         stage.setOnCloseRequest { tearDown() }
         stage.show()
 
@@ -288,8 +322,7 @@ class MainView {
             )
         )
         refreshSavedFilters()
-        actionLabel.text = "✓ saved filter \"${req.name}\""
-        actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #16a085; -fx-font-weight: bold;"
+        action("✓ saved filter \"${req.name}\"", Status.OK)
     }
 
     private fun onLoadFilter(name: String) {
@@ -322,8 +355,7 @@ class MainView {
             defaultTopic = currentTopic ?: allTopics.firstOrNull(),
         ).showAndWait().orElse(null) ?: return
 
-        actionLabel.text = "Importing…"
-        actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #2c3e50;"
+        action("Importing…", Status.INFO)
         val producer = currentProducer ?: KafkaMessageProducer(currentBootstrap, currentAuth).also { currentProducer = it }
         val task = object : Task<ImportOutcome>() {
             override fun call(): ImportOutcome {
@@ -346,12 +378,10 @@ class MainView {
         }
         task.setOnSucceeded {
             val o = task.value
-            actionLabel.text = "✓ sent ${o.sent} · skipped ${o.skipped} · failed ${o.failed} → ${req.topic}"
-            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: ${if (o.failed == 0L) "#16a085" else "#c0392b"}; -fx-font-weight: bold;"
+            action("✓ sent ${o.sent} · skipped ${o.skipped} · failed ${o.failed} → ${req.topic}", if (o.failed == 0L) Status.OK else Status.ERR)
         }
         task.setOnFailed {
-            actionLabel.text = "✗ import failed: ${task.exception?.message ?: task.exception?.javaClass?.simpleName}"
-            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #c0392b; -fx-font-weight: bold;"
+            action("✗ import failed: ${task.exception?.message ?: task.exception?.javaClass?.simpleName}", Status.ERR)
             log.error("import failed", task.exception)
         }
         Thread(task, "import").apply { isDaemon = true }.start()
@@ -381,8 +411,7 @@ class MainView {
         }
         val file = chooser.showSaveDialog(exportButton.scene.window) ?: return
 
-        actionLabel.text = "Exporting…"
-        actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #2c3e50;"
+        action("Exporting…", Status.INFO)
         val capturedFilter = currentFilter
         val task = object : Task<Long>() {
             override fun call(): Long =
@@ -391,12 +420,10 @@ class MainView {
                 }
         }
         task.setOnSucceeded {
-            actionLabel.text = "✓ exported ${task.value} rows → ${file.name}"
-            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #16a085; -fx-font-weight: bold;"
+            action("✓ exported ${task.value} rows → ${file.name}", Status.OK)
         }
         task.setOnFailed {
-            actionLabel.text = "✗ export failed: ${task.exception?.message ?: task.exception?.javaClass?.simpleName}"
-            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #c0392b; -fx-font-weight: bold;"
+            action("✗ export failed: ${task.exception?.message ?: task.exception?.javaClass?.simpleName}", Status.ERR)
             log.error("export failed", task.exception)
         }
         Thread(task, "export").apply { isDaemon = true }.start()
@@ -445,12 +472,10 @@ class MainView {
         }
         task.setOnSucceeded {
             val rm = task.value
-            actionLabel.text = "✓ sent → ${rm.topic}:${rm.partition}@${rm.offset}"
-            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #16a085; -fx-font-weight: bold;"
+            action("✓ sent → ${rm.topic}:${rm.partition}@${rm.offset}", Status.OK)
         }
         task.setOnFailed {
-            actionLabel.text = "✗ send failed: ${task.exception.message ?: task.exception.javaClass.simpleName}"
-            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #c0392b; -fx-font-weight: bold;"
+            action("✗ send failed: ${task.exception.message ?: task.exception.javaClass.simpleName}", Status.ERR)
             log.error("send failed", task.exception)
         }
         Thread(task, "producer-send").apply { isDaemon = true }.start()
@@ -494,18 +519,15 @@ class MainView {
     private fun topicAdmin(): com.kdt.kafka.TopicAdmin? = connection?.topicAdmin()
 
     private fun runAdmin(busyMsg: String, work: () -> Unit, okMsg: () -> String, onOk: () -> Unit = {}) {
-        actionLabel.text = busyMsg
-        actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #2c3e50;"
+        action(busyMsg, Status.INFO)
         val task = object : Task<Unit>() { override fun call() = work() }
         task.setOnSucceeded {
-            actionLabel.text = okMsg()
-            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #16a085; -fx-font-weight: bold;"
+            action(okMsg(), Status.OK)
             onOk()
         }
         task.setOnFailed {
             val t = task.exception
-            actionLabel.text = "✗ ${t?.message ?: t?.javaClass?.simpleName}"
-            actionLabel.style = "-fx-padding: 6 12 6 12; -fx-text-fill: #c0392b; -fx-font-weight: bold;"
+            action("✗ ${t?.message ?: t?.javaClass?.simpleName}", Status.ERR)
             log.error("admin op failed", t)
         }
         Thread(task, "topic-admin").apply { isDaemon = true }.start()

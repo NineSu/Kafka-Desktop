@@ -67,7 +67,7 @@ class ConnectionForm : VBox() {
 
     fun setStatus(text: String, error: Boolean = false) {
         statusLabel.text = text
-        statusLabel.style = if (error) "-fx-text-fill: #c0392b;" else "-fx-text-fill: #2c3e50;"
+        statusLabel.styleClass.setAll("status-label", if (error) "status-err" else "status-info")
     }
 
     fun setBusy(busy: Boolean) {
