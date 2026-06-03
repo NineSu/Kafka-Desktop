@@ -132,6 +132,7 @@ class ConsumerGroupDialog(
         val topic = if (topics.size == 1) topics.first()
         else ChoiceDialog(topics.first(), topics).apply {
             title = "Pick topic"; headerText = "Reset which topic for ${info.groupId}?"
+            applyTheme()
         }.showAndWait().orElse(null) ?: return
 
         val spec = ResetOffsetDialog(info.groupId, topic).showAndWait().orElse(null) ?: return
