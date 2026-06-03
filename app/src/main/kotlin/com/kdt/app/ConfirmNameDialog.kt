@@ -1,5 +1,6 @@
 package com.kdt.app
 
+import com.kdt.ui.common.theme.applyTheme
 import javafx.geometry.Insets
 import javafx.scene.control.ButtonType
 import javafx.scene.control.Dialog
@@ -35,5 +36,6 @@ class ConfirmNameDialog(
         field.textProperty().addListener { _, _, v -> okButton.isDisable = v.trim() != expected }
 
         setResultConverter { btn -> btn == ButtonType.OK && field.text.trim() == expected }
+        applyTheme()
     }
 }

@@ -3,6 +3,7 @@ package com.kdt.app
 import com.kdt.kafka.ConsumerGroupInfo
 import com.kdt.kafka.OffsetResetSpec
 import com.kdt.kafka.PartitionLag
+import com.kdt.ui.common.theme.applyTheme
 import javafx.collections.FXCollections
 import javafx.concurrent.Task
 import javafx.geometry.Insets
@@ -63,6 +64,7 @@ class ConsumerGroupDialog(
         dialogPane.buttonTypes.add(ButtonType.CLOSE)
 
         loadGroups()
+        applyTheme()
     }
 
     private fun buildLagTable() {
@@ -119,12 +121,12 @@ class ConsumerGroupDialog(
             Alert(Alert.AlertType.WARNING,
                 "Group \"${info.groupId}\" is ${info.state} with ${info.members} active member(s).\n" +
                     "Kafka rejects offset resets while consumers are active — stop them first."
-            ).apply { headerText = "Cannot reset an active group" }.showAndWait()
+            ).apply { headerText = "Cannot reset an active group" }.apply { applyTheme() }.showAndWait()
             return
         }
         val topics = info.lags.map { it.topic }.distinct()
         if (topics.isEmpty()) {
-            Alert(Alert.AlertType.INFORMATION, "Group has no committed offsets — no topic to reset.").showAndWait()
+            Alert(Alert.AlertType.INFORMATION, "Group has no committed offsets — no topic to reset.").apply { applyTheme() }.showAndWait()
             return
         }
         val topic = if (topics.size == 1) topics.first()

@@ -9,6 +9,7 @@ import com.kdt.auth.SaslScramAuth
 import com.kdt.auth.ScramMechanism
 import com.kdt.auth.SslAuth
 import com.kdt.auth.SslConfig
+import com.kdt.ui.common.theme.applyTheme
 import javafx.geometry.Insets
 import javafx.scene.control.ButtonType
 import javafx.scene.control.CheckBox
@@ -169,6 +170,7 @@ class AuthDialog(initial: AuthFormState = AuthFormState()) : Dialog<AuthStrategy
                 state.toAuthStrategy()
             }
         }
+        applyTheme()
     }
 
     private fun syncVisibility() {

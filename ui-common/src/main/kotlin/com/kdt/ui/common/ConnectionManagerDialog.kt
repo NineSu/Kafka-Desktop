@@ -1,6 +1,7 @@
 package com.kdt.ui.common
 
 import javafx.collections.ObservableList
+import com.kdt.ui.common.theme.applyTheme
 import javafx.geometry.Insets
 import javafx.scene.control.Button
 import javafx.scene.control.ButtonType
@@ -55,6 +56,7 @@ class ConnectionManagerDialog(
         }
         dialogPane.content = pane
         dialogPane.buttonTypes.add(ButtonType.CLOSE)
+        applyTheme()
     }
 
     private fun addConnection() {
@@ -82,16 +84,17 @@ class ConnectionManagerDialog(
         connections.remove(vm)
         onDelete(vm.id)
         testResult.text = "Deleted ${vm.name}"
+        testResult.styleClass.setAll("status-label", "status-info")
     }
 
     private fun testSelected() {
         val vm = listView.selectionModel.selectedItem ?: return
         onLoadSecrets(vm)
         testResult.text = "Testing ${vm.name}…"
-        testResult.style = "-fx-text-fill: #2c3e50;"
+        testResult.styleClass.setAll("status-label", "status-info")
         onTest(vm) { msg, ok ->
             testResult.text = msg
-            testResult.style = if (ok) "-fx-text-fill: #16a085;" else "-fx-text-fill: #c0392b;"
+            testResult.styleClass.setAll("status-label", if (ok) "status-ok" else "status-err")
         }
     }
 }
@@ -136,6 +139,7 @@ private class ConnectionEditDialog(private val vm: ConnectionVM) : Dialog<Boolea
                 true
             }
         }
+        applyTheme()
     }
 
     private fun authLabel(s: AuthFormState): String = when (s.protocol) {

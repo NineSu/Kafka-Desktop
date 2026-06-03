@@ -2,6 +2,7 @@ package com.kdt.app
 
 import com.kdt.kafka.PartitionInfo
 import com.kdt.kafka.TopicDetail
+import com.kdt.ui.common.theme.applyTheme
 import javafx.collections.FXCollections
 import javafx.geometry.Insets
 import javafx.scene.control.ButtonType
@@ -41,6 +42,7 @@ class TopicDetailDialog(detail: TopicDetail) : Dialog<Unit>() {
         }
         dialogPane.content = box
         dialogPane.buttonTypes.add(ButtonType.CLOSE)
+        applyTheme()
     }
 
     class PartitionRow(info: PartitionInfo) {
@@ -72,5 +74,6 @@ class AddPartitionsDialog(topic: String, private val current: Int) : Dialog<Int>
             commit(spinner)
             spinner.value.takeIf { it > current }
         }
+        applyTheme()
     }
 }

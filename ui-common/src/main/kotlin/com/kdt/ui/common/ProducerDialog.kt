@@ -1,6 +1,7 @@
 package com.kdt.ui.common
 
 import javafx.beans.property.SimpleStringProperty
+import com.kdt.ui.common.theme.applyTheme
 import javafx.collections.FXCollections
 import javafx.geometry.Insets
 import javafx.geometry.Pos
@@ -48,7 +49,7 @@ class ProducerDialog(
     private val valueArea = TextArea(initialValue.orEmpty()).apply {
         prefRowCount = 8
         prefWidth = 480.0
-        style = "-fx-font-family: monospace; -fx-font-size: 12;"
+        styleClass.add("mono")
     }
     private val headersContainer = VBox(4.0)
     private val headerRows = FXCollections.observableArrayList<HeaderEditorRow>()
@@ -98,6 +99,7 @@ class ProducerDialog(
                     .associate { it.name to it.valueOrNull?.toByteArray() },
             )
         }
+        applyTheme()
     }
 
     private fun addHeaderRow(name: String, value: String) {

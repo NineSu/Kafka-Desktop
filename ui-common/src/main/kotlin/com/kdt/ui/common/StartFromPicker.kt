@@ -1,5 +1,6 @@
 package com.kdt.ui.common
 
+import com.kdt.ui.common.theme.applyTheme
 import javafx.geometry.Insets
 import javafx.scene.control.ButtonType
 import javafx.scene.control.DatePicker
@@ -68,6 +69,7 @@ class StartFromPicker(topic: String) : Dialog<StartChoice>() {
         setResultConverter { btn ->
             if (btn != ButtonType.OK) null else resolve()
         }
+        applyTheme()
     }
 
     private fun resolve(): StartChoice = when (group.selectedToggle) {

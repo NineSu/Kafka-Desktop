@@ -1,5 +1,6 @@
 package com.kdt.app
 
+import com.kdt.ui.common.theme.applyTheme
 import javafx.geometry.Insets
 import javafx.scene.control.ButtonType
 import javafx.scene.control.Dialog
@@ -48,5 +49,6 @@ class SaveFilterDialog(currentTopic: String?, suggestedName: String = "") : Dial
             val topic = if (topicRadio.isSelected) currentTopic else null
             SaveFilterRequest(name, topic)
         }
+        applyTheme()
     }
 }

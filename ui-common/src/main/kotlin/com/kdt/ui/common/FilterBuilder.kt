@@ -72,7 +72,7 @@ class FilterBuilder : TitledPane() {
 
         val addBtn = Button("+ Add rule").apply { setOnAction { addRule() } }
         val applyBtn = Button("Apply").apply {
-            style = "-fx-base: #3498db; -fx-text-fill: white;"
+            styleClass.add("primary-button")
             setOnAction { onApply(buildFilter()) }
         }
         val clearBtn = Button("Clear").apply { setOnAction {

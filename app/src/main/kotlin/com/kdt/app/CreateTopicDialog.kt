@@ -1,5 +1,6 @@
 package com.kdt.app
 
+import com.kdt.ui.common.theme.applyTheme
 import javafx.geometry.Insets
 import javafx.scene.control.ButtonType
 import javafx.scene.control.Dialog
@@ -55,6 +56,7 @@ class CreateTopicDialog : Dialog<CreateTopicRequest>() {
                 configs = parseConfigs(configsArea.text),
             )
         }
+        applyTheme()
     }
 
     private fun parseConfigs(text: String): Map<String, String> =

@@ -1,5 +1,6 @@
 package com.kdt.ui.common
 
+import com.kdt.ui.common.theme.applyTheme
 import javafx.geometry.Insets
 import javafx.scene.control.ButtonType
 import javafx.scene.control.Dialog
@@ -40,5 +41,6 @@ class ExportDialog(rowCount: Long) : Dialog<ExportChoice>() {
                 else -> ExportChoice.CSV
             }
         }
+        applyTheme()
     }
 }

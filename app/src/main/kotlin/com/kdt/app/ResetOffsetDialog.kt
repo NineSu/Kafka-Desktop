@@ -1,6 +1,7 @@
 package com.kdt.app
 
 import com.kdt.kafka.OffsetResetSpec
+import com.kdt.ui.common.theme.applyTheme
 import javafx.geometry.Insets
 import javafx.scene.control.ButtonType
 import javafx.scene.control.DatePicker
@@ -46,6 +47,7 @@ class ResetOffsetDialog(groupId: String, topic: String) : Dialog<OffsetResetSpec
         dialogPane.content = grid
         dialogPane.buttonTypes.addAll(ButtonType.OK, ButtonType.CANCEL)
         setResultConverter { btn -> if (btn != ButtonType.OK) null else resolve() }
+        applyTheme()
     }
 
     private fun resolve(): OffsetResetSpec = when (group.selectedToggle) {

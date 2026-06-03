@@ -1,6 +1,7 @@
 package com.kdt.app
 
 import com.kdt.storage.ExportFormat
+import com.kdt.ui.common.theme.applyTheme
 import javafx.collections.FXCollections
 import javafx.geometry.Insets
 import javafx.scene.control.ButtonType
@@ -50,5 +51,6 @@ class ImportDialog(
             if (btn != ButtonType.OK) null
             else topicBox.value?.let { ImportRequest(formatBox.value, it) }
         }
+        applyTheme()
     }
 }
