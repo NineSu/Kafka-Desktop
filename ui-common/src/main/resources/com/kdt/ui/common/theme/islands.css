@@ -9,7 +9,7 @@
 .root {
     -accent: #3574F0;
     -fx-font-family: "Inter", "SF Pro Text", "Segoe UI", "System";
-    -fx-font-size: 13px;
+    -fx-font-size: 12px;
     -fx-focus-color: -accent;
     -fx-faint-focus-color: transparent;
 }
@@ -76,13 +76,13 @@
 
 /* ---- Text ---- */
 .label { -fx-text-fill: -text; }
-.text-field, .text-area { -fx-text-fill: -text; }
+.text-field, .text-area { -fx-text-fill: -text; -fx-padding: 3 8 3 8; }
 .mono { -fx-font-family: "JetBrains Mono", "SF Mono", "Consolas", monospace; -fx-font-size: 12px; }
-.header-strong { -fx-padding: 6 12 6 12; -fx-font-weight: bold; -fx-text-fill: -text; }
-.muted-label  { -fx-padding: 6 8 6 8; -fx-text-fill: -text-muted; }
+.header-strong { -fx-padding: 4 10 4 10; -fx-font-weight: bold; -fx-text-fill: -text; }
+.muted-label  { -fx-padding: 4 8 4 8; -fx-text-fill: -text-muted; }
 
 /* status labels */
-.status-label { -fx-padding: 6 12 6 12; }
+.status-label { -fx-padding: 4 10 4 10; }
 .status-info  { -fx-text-fill: -status-info; }
 .status-ok    { -fx-text-fill: -status-ok; -fx-font-weight: bold; }
 .status-err   { -fx-text-fill: -status-err; -fx-font-weight: bold; }
@@ -95,7 +95,7 @@
     -fx-border-color: -control-border;
     -fx-border-width: 1;
     -fx-text-fill: -text;
-    -fx-padding: 5 13 5 13;
+    -fx-padding: 3 10 3 10;
     -fx-cursor: hand;
 }
 .button:hover { -fx-background-color: derive(-control-bg, -4%); }
@@ -106,7 +106,7 @@
     -fx-text-fill: white;
 }
 .primary-button:hover { -fx-background-color: derive(-accent, -8%); -fx-border-color: derive(-accent, -8%); }
-.gear-button { -fx-padding: 5 9 5 9; -fx-font-size: 15px; }
+.gear-button { -fx-padding: 3 8 3 8; -fx-font-size: 14px; }
 
 /* ---- Inputs ---- */
 .text-field, .text-area, .combo-box, .choice-box, .spinner, .color-picker {
@@ -128,7 +128,7 @@
 .list-cell {
     -fx-background-color: transparent;
     -fx-text-fill: -text;
-    -fx-padding: 6 12 6 12;
+    -fx-padding: 5 11 5 11;
 }
 .list-cell:filled:hover { -fx-background-color: -chip; }
 .list-cell:filled:selected {
@@ -147,7 +147,7 @@
 .table-row-cell:hover { -fx-background-color: -chip; }
 .table-row-cell:selected { -fx-background-color: -selection-bg; }
 .table-row-cell:selected .text { -fx-fill: -selection-text; }
-.table-cell { -fx-text-fill: -text; -fx-padding: 5 11 5 11; -fx-border-width: 0; }
+.table-cell { -fx-text-fill: -text; -fx-padding: 3 10 3 10; -fx-border-width: 0; }
 
 /* ---- TabPane (detail pane) ---- */
 .tab-pane .tab-header-background { -fx-background-color: transparent; }
@@ -156,6 +156,21 @@
 .tab-pane .tab .tab-label { -fx-text-fill: -text-muted; }
 .tab-pane .tab:selected .tab-label { -fx-text-fill: -selection-text; -fx-font-weight: bold; }
 .tab-pane > .tab-header-area > .headers-region > .tab:selected .focus-indicator { -fx-border-color: transparent; }
+
+/* ---- TitledPane (Message detail / Key / Value / Headers / Filter) ---- */
+.titled-pane { -fx-background-color: transparent; -fx-text-fill: -text; }
+.titled-pane > .title {
+    -fx-background-color: -control-bg;
+    -fx-background-radius: 10 10 0 0;
+    -fx-border-color: -line;
+    -fx-border-width: 0 0 1 0;
+    -fx-padding: 4 9 4 9;
+    -fx-font-weight: bold;
+}
+.titled-pane > .title > .text { -fx-fill: -text; }
+.titled-pane > .title:hover { -fx-background-color: derive(-control-bg, 8%); }
+.titled-pane > .title > .arrow-button > .arrow { -fx-background-color: -text-muted; }
+.titled-pane > *.content { -fx-background-color: -island; -fx-background-radius: 0 0 10 10; }
 
 /* ---- ScrollBar ---- */
 .scroll-bar { -fx-background-color: transparent; }
@@ -168,7 +183,7 @@
 
 /* ---- Menu bar / toolbar ---- */
 .app-topbar { -fx-background-color: -island; -fx-border-color: transparent transparent -island-border transparent; -fx-border-width: 1; }
-.topbar-row { -fx-padding: 6 11 6 11; }
+.topbar-row { -fx-padding: 4 10 4 10; }
 .app-logo {
     -fx-background-color: -accent; -fx-text-fill: white; -fx-font-weight: bold;
     -fx-background-radius: 6; -fx-min-width: 22; -fx-min-height: 22; -fx-alignment: center;
