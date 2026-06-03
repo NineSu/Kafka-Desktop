@@ -32,6 +32,12 @@ macOS 首次打开若被 Gatekeeper 拦（"身份不明的开发者"）：**右�
 - Topic 管理：创建 / 详情 / 增加分区 / 删除（破坏性操作输名二次确认）
 - Consumer Group：查看 lag、reset offset（earliest/latest/timestamp/offset，活跃组保护）
 
+**外观**
+- Islands Light / Dark 双主题（参考 IDEA 最新 Islands 风格：圆角"岛屿"卡片 + 留白 + 柔和阴影）
+- 主题色可选：7 个预设（默认 JetBrains 蓝）+ 自定义取色器
+- 菜单栏 **Tools → Settings… → Appearance**（或工具栏 ⚙）切换主题与主题色，实时生效
+- 选择持久化到 `~/.kafka-desktop/appearance.json`，重启自动恢复
+
 ## 技术栈
 
 Kotlin 1.9 · JDK 17 · Gradle 8.10（Kotlin DSL）· JavaFX 21 · Koin · kafka-clients 3.7 · DuckDB · Jackson · JUnit5/kotest
